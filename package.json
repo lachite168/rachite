@@ -1,0 +1,35 @@
+{
+  "name": "fullstack-starter",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=26.13.1 <27",
+    "npm": ">=11.10.0 <12"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:web": "npm run dev --workspace @starter/web",
+    "dev:api": "cargo run -p starter-api",
+    "build": "npm run build:web && cargo build --release --locked",
+    "lint": "npm run lint:no-fix",
+    "typecheck": "npm run type-check",
+    "test": "cargo test --workspace --locked",
+    "format": "prettier --cache --write . && cargo fmt --all",
+    "format:check": "npm run format:check:prettier && cargo fmt --all -- --check",
+    "preview": "npm run preview --workspace @starter/web",
+    "build:web": "npm run build --workspace @starter/web",
+    "lint:no-fix": "npm run lint:web && cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "lint:web": "oxlint --deny-warnings apps/web",
+    "lint:fix": "npm run lint:web -- --fix",
+    "type-check": "npm run type-check --workspace @starter/web",
+    "format:check:prettier": "prettier --cache --check ."
+  },
+  "devDependencies": {
+    "concurrently": "10.0.7",
+    "oxlint": "^1.0.0",
+    "prettier": "^3.6.0"
+  }
+}

@@ -1,0 +1,11 @@
+.git
+.github
+.vscode
+node_modules
+**/node_modules
+target
+**/dist
+.env
+.env.*
+*.db*
+*.log

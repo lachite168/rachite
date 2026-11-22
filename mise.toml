@@ -1,0 +1,55 @@
+[settings]
+idiomatic_version_file_enable_tools = ["node"]
+
+[tools]
+rust = "stable"
+
+[tasks.help]
+description = "List available tasks"
+alias = "default"
+run = "mise tasks ls"
+
+[tasks.init]
+description = "Install Web dependencies and fetch Rust dependencies"
+run = ["npm ci", "cargo fetch --locked"]
+
+[tasks.install]
+description = "Install Web dependencies"
+run = "npm ci"
+
+[tasks.dev]
+description = "Start the API and Web dev servers"
+run = "npm run dev"
+
+[tasks.lint]
+description = "Check Web and API code"
+run = "npm run lint:no-fix"
+
+[tasks.format]
+description = "Format Web and API code"
+run = "npm run format"
+
+[tasks.test]
+description = "Run API integration tests"
+run = "npm test"
+
+[tasks.check]
+description = "Run type, lint, formatting, and test checks"
+run = ["npm run type-check", "npm run lint:no-fix", "npm run format:check", "npm test"]
+
+[tasks.build]
+description = "Build the Web and API for release"
+run = "npm run build"
+
+[tasks.clean]
+description = "Remove local build outputs, caches, and Node.js dependencies"
+usage = 'flag "--dry-run" help="Show what would be removed"'
+run = 'node scripts/clean.mjs {% if usage.dry_run %}--dry-run{% endif %}'
+
+[tasks.up]
+description = "Build and start the app containers"
+run = "docker compose up -d --build"
+
+[tasks.down]
+description = "Stop and remove the app containers"
+run = "docker compose down"

@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["oxc", "typescript", "unicorn", "react"],
+  "env": {
+    "browser": true
+  },
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "eqeqeq": "error",
+    "no-console": "warn",
+    "typescript/consistent-type-imports": "error"
+  },
+  "overrides": [
+    {
+      "files": ["apps/web/*.config.ts"],
+      "env": {
+        "browser": false,
+        "node": true
+      }
+    }
+  ]
+}
