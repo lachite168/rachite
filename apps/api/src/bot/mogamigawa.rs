@@ -21,7 +21,7 @@ impl Bot {
             ordered_stamps.push(stamp);
         }
 
-        if !self.store.record_mogamigawa(message_id).await? {
+        if !self.store.claim_mogamigawa_response(message_id).await? {
             return Ok(());
         }
 

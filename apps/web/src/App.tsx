@@ -3,7 +3,7 @@ import { Alert, Container, Link } from '@mui/material'
 
 import { SiteHeader } from '@/components/SiteHeader'
 import CommandsPage from '@/pages/Commands'
-import SenryuPage from '@/pages/Senryu'
+import VerseList from '@/pages/VerseList'
 
 export default function App() {
   return (
@@ -18,7 +18,8 @@ export default function App() {
       >
         <Routes>
           <Route path="/" element={<></>} />
-          <Route path="/senryu" element={<SenryuPage />} />
+          <Route path="/senryu" element={<VerseList kind="senryu" />} />
+          <Route path="/mogamigawa" element={<VerseList kind="mogamigawa" />} />
           <Route path="/commands" element={<CommandsPage />} />
           <Route
             path="*"

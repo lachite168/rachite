@@ -346,6 +346,15 @@ async fn mogamigawa_responds_once_and_uses_its_own_channel_setting() {
     let message = test.channel_message(&format!("{verse} {link}"), &literal_citation);
     test.bot.handle_created(&message).await.unwrap();
     test.expect_mogamigawa_reply_and_stamps(&message, &MOGAMIGAWA_STAMPS);
+    let entries = test.bot.store.list_mogamigawa(None, 100).await.unwrap();
+    let recorded = entries
+        .iter()
+        .find(|entry| entry.message_id == message.id.to_string())
+        .unwrap();
+    assert_eq!(
+        recorded.verse.as_deref(),
+        Some("コーヒーは\n朝に飲みます\n最上川")
+    );
     test.bot.handle_created(&message).await.unwrap();
     assert!(test.requests.try_recv().is_err());
 
@@ -377,6 +386,32 @@ async fn mogamigawa_responds_once_and_uses_its_own_channel_setting() {
     test.bot.handle_created(&reenabled).await.unwrap();
     test.expect_mogamigawa_reply_and_stamps(&reenabled, &MOGAMIGAWA_STAMPS);
 
+    let edited_verse = "古池や 蛙飛びこむ";
+    let mut edited = test.channel_message(edited_verse, edited_verse);
+    edited.id = message.id;
+    test.bot.handle_updated(&edited).await.unwrap();
+    let entries = test.bot.store.list_mogamigawa(None, 100).await.unwrap();
+    let updated = entries
+        .iter()
+        .find(|entry| entry.message_id == message.id.to_string())
+        .unwrap();
+    assert_eq!(updated.verse.as_deref(), Some("古池や\n蛙飛びこむ\n最上川"));
+    assert_eq!(updated.detected_at, recorded.detected_at);
+
+    edited.plain_text = "編集で対象外".into();
+    test.bot.handle_updated(&edited).await.unwrap();
+    test.bot.handle_deleted(reenabled.id).await.unwrap();
+    test.bot.handle_created(&reenabled).await.unwrap();
+    let entries = test.bot.store.list_mogamigawa(None, 100).await.unwrap();
+    for hidden in [message.id, disabled.id, reenabled.id] {
+        assert!(
+            !entries
+                .iter()
+                .any(|entry| entry.message_id == hidden.to_string())
+        );
+    }
+    assert!(test.requests.try_recv().is_err());
+
     for message in [message, senryu_disabled, reenabled] {
         sqlx::query("DELETE FROM mogamigawa_responses WHERE message_id = ?")
             .bind(message.id.to_string())
@@ -403,6 +438,12 @@ async fn mogamigawa_stops_at_a_failed_stamp_and_does_not_retry() {
     let error = test.bot.handle_created(&message).await.unwrap_err();
     assert!(error.to_string().contains("mogamigawa02_gami"));
     test.expect_mogamigawa_reply_and_stamps(&message, &MOGAMIGAWA_STAMPS[..2]);
+    let entries = test.bot.store.list_mogamigawa(None, 100).await.unwrap();
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry.message_id == message.id.to_string())
+    );
     test.bot.handle_created(&message).await.unwrap();
     assert!(test.requests.try_recv().is_err());
 

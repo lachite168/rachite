@@ -15,6 +15,7 @@ import { usePreferences } from '@/store'
 
 const navigation = [
   { path: '/senryu', label: '川柳一覧' },
+  { path: '/mogamigawa', label: '最上川一覧' },
   { path: '/commands', label: '使い方' }
 ]
 
@@ -71,6 +72,10 @@ export function SiteHeader() {
               aria-label="メインメニュー"
               direction="row"
               spacing={0.5}
+              sx={{
+                order: { xs: 1, sm: 0 },
+                width: { xs: '100%', sm: 'auto' }
+              }}
             >
               {navigation.map(({ path, label }) => (
                 <Button
@@ -80,6 +85,7 @@ export function SiteHeader() {
                   end
                   color="inherit"
                   sx={{
+                    flex: { xs: 1, sm: 'initial' },
                     '&[aria-current="page"]': {
                       bgcolor: 'action.selected',
                       color: 'primary.dark',

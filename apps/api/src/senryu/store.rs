@@ -1,5 +1,5 @@
 use chrono::{DateTime, Datelike, NaiveDateTime, Utc};
-use sqlx::{FromRow, MySqlPool, QueryBuilder};
+use sqlx::{FromRow, MySql, MySqlPool, QueryBuilder};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -13,6 +13,14 @@ pub struct Senryu {
     pub channel_id: String,
     pub verse: String,
     pub detected_at: NaiveDateTime,
+}
+
+#[derive(FromRow)]
+pub(crate) struct Mogamigawa {
+    pub message_id: String,
+    pub channel_id: Option<String>,
+    pub verse: Option<String>,
+    pub detected_at: Option<NaiveDateTime>,
 }
 
 pub struct SenryuCursor {
@@ -35,11 +43,43 @@ impl SenryuCursor {
     }
 
     pub fn encode(entry: &Senryu) -> String {
-        format!(
-            "{}.{}",
-            entry.detected_at.and_utc().timestamp_micros(),
-            entry.message_id
-        )
+        encode_dated_cursor(entry.detected_at, &entry.message_id)
+    }
+
+    fn push_older_than(self, query: &mut QueryBuilder<MySql>) {
+        query
+            .push("(detected_at < ")
+            .push_bind(self.detected_at)
+            .push(" OR (detected_at = ")
+            .push_bind(self.detected_at)
+            .push(" AND message_id < ")
+            .push_bind(self.message_id)
+            .push("))");
+    }
+}
+
+fn encode_dated_cursor(detected_at: NaiveDateTime, message_id: &str) -> String {
+    format!("{}.{message_id}", detected_at.and_utc().timestamp_micros())
+}
+
+pub(crate) enum MogamigawaCursor {
+    Dated(SenryuCursor),
+    Legacy(Uuid),
+}
+
+impl MogamigawaCursor {
+    pub(crate) fn decode(value: &str) -> Option<Self> {
+        match value.strip_prefix("legacy.") {
+            Some(id) => id.parse().ok().map(Self::Legacy),
+            None => SenryuCursor::decode(value).map(Self::Dated),
+        }
+    }
+
+    pub(crate) fn encode(entry: &Mogamigawa) -> String {
+        match entry.detected_at {
+            Some(date) => encode_dated_cursor(date, &entry.message_id),
+            None => format!("legacy.{}", entry.message_id),
+        }
     }
 }
 
@@ -105,15 +145,54 @@ impl SenryuStore {
         Ok(())
     }
 
-    pub(crate) async fn record_mogamigawa(&self, message_id: Uuid) -> Result<bool, sqlx::Error> {
-        let inserted = sqlx::query("INSERT INTO mogamigawa_responses (message_id) VALUES (?)")
-            .bind(message_id.to_string())
-            .execute(&self.db)
-            .await;
-        match inserted {
-            Err(sqlx::Error::Database(error)) if error.is_unique_violation() => Ok(false),
-            result => result.map(|_| true),
-        }
+    pub(crate) async fn record_mogamigawa(
+        &self,
+        message_id: Uuid,
+        channel_id: Uuid,
+        verse: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "INSERT INTO mogamigawa_responses (message_id, channel_id, verse, detected_at, response_started)
+             VALUES (?, ?, ?, UTC_TIMESTAMP(6), FALSE)
+             ON DUPLICATE KEY UPDATE message_id = VALUES(message_id)",
+        )
+        .bind(message_id.to_string())
+        .bind(channel_id.to_string())
+        .bind(verse)
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
+
+    pub(crate) async fn claim_mogamigawa_response(
+        &self,
+        message_id: Uuid,
+    ) -> Result<bool, sqlx::Error> {
+        let result = sqlx::query(
+            "UPDATE mogamigawa_responses SET response_started = TRUE
+             WHERE message_id = ? AND listed AND NOT response_started",
+        )
+        .bind(message_id.to_string())
+        .execute(&self.db)
+        .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
+    pub(crate) async fn revise_mogamigawa(
+        &self,
+        message_id: Uuid,
+        verse: Option<&str>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE mogamigawa_responses SET verse = ?, listed = ?
+             WHERE message_id = ? AND listed",
+        )
+        .bind(verse)
+        .bind(verse.is_some())
+        .bind(message_id.to_string())
+        .execute(&self.db)
+        .await?;
+        Ok(())
     }
 
     /// Returns whether this event added a new entry, so duplicates don't send another reply.
@@ -194,14 +273,35 @@ impl SenryuStore {
         let mut query =
             QueryBuilder::new("SELECT message_id, channel_id, verse, detected_at FROM senryu");
         if let Some(cursor) = before {
-            query
-                .push(" WHERE detected_at < ")
-                .push_bind(cursor.detected_at)
-                .push(" OR (detected_at = ")
-                .push_bind(cursor.detected_at)
-                .push(" AND message_id < ")
-                .push_bind(cursor.message_id)
-                .push(")");
+            query.push(" WHERE ");
+            cursor.push_older_than(&mut query);
+        }
+        query
+            .push(" ORDER BY detected_at DESC, message_id DESC LIMIT ")
+            .push_bind(limit);
+        query.build_query_as().fetch_all(&self.db).await
+    }
+
+    pub(crate) async fn list_mogamigawa(
+        &self,
+        before: Option<MogamigawaCursor>,
+        limit: u32,
+    ) -> Result<Vec<Mogamigawa>, sqlx::Error> {
+        let mut query = QueryBuilder::new(
+            "SELECT message_id, channel_id, verse, detected_at FROM mogamigawa_responses WHERE listed",
+        );
+        match before {
+            Some(MogamigawaCursor::Dated(cursor)) => {
+                query.push(" AND (detected_at IS NULL OR ");
+                cursor.push_older_than(&mut query);
+                query.push(")");
+            }
+            Some(MogamigawaCursor::Legacy(id)) => {
+                query
+                    .push(" AND detected_at IS NULL AND message_id < ")
+                    .push_bind(id.to_string());
+            }
+            None => {}
         }
         query
             .push(" ORDER BY detected_at DESC, message_id DESC LIMIT ")

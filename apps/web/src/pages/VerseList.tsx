@@ -1,14 +1,15 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { Alert, Button, Stack, Typography } from '@mui/material'
 
-import { api } from '@/api'
+import { api, type VerseKind } from '@/api'
 import { QueryFeedback } from '@/components/QueryFeedback'
-import { SenryuCard } from '@/components/SenryuCard'
+import { VerseCard } from '@/components/VerseCard'
 
-export default function SenryuPage() {
+export default function VerseList({ kind }: { kind: VerseKind }) {
+  const label = kind === 'senryu' ? '川柳' : '最上川'
   const query = useInfiniteQuery({
-    queryKey: ['senryu'],
-    queryFn: ({ pageParam, signal }) => api.senryu(pageParam, signal),
+    queryKey: [kind],
+    queryFn: ({ pageParam, signal }) => api.verses(kind, pageParam, signal),
     initialPageParam: null as string | null,
     getNextPageParam: page => page.next_cursor ?? undefined
   })
@@ -26,26 +27,26 @@ export default function SenryuPage() {
     <Stack spacing={3}>
       <div>
         <Typography component="h1" variant="h4" gutterBottom>
-          川柳一覧
+          {label}一覧
         </Typography>
         <Typography color="text.secondary">
-          traQ で Bot が見つけた川柳を新着順に掲載しています。
+          traQ で Bot が見つけた{label}を新着順に掲載しています。
         </Typography>
       </div>
       <QueryFeedback
         pending={query.isPending}
-        loadingMessage="川柳を読み込んでいます…"
+        loadingMessage={`${label}を読み込んでいます…`}
         error={query.error?.message}
         retrying={query.isFetching}
         onRetry={retry}
       />
       {query.isSuccess && entries.length === 0 && (
-        <Alert severity="info">まだ掲載されている川柳はありません。</Alert>
+        <Alert severity="info">まだ掲載されている{label}はありません。</Alert>
       )}
       {entries.length > 0 && (
         <Stack component="ul" spacing={2} sx={{ listStyle: 'none', p: 0 }}>
           {entries.map(entry => (
-            <SenryuCard key={entry.message_id} entry={entry} />
+            <VerseCard key={entry.message_id} entry={entry} />
           ))}
         </Stack>
       )}

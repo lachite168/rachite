@@ -114,14 +114,25 @@ pub(crate) fn split_into_phrases(text: &str, tokenizer: &Tokenizer) -> Option<Ve
     Some(phrases)
 }
 
-pub(crate) fn is_mogamigawa(phrases: &[Phrase]) -> bool {
+pub(crate) fn detect_mogamigawa(phrases: &[Phrase]) -> Option<String> {
     let mut mora = 0;
-    let mut has_boundary = false;
-    for phrase in phrases {
+    let mut boundary = None;
+    for (index, phrase) in phrases.iter().enumerate() {
         mora += phrase.mora;
-        has_boundary |= mora == 5;
+        if mora == 5 && boundary.is_none() {
+            boundary = Some(index + 1);
+        }
+        if mora > 12 {
+            return None;
+        }
     }
-    has_boundary && mora == 12
+    if mora != 12 {
+        return None;
+    }
+    let (first, second) = phrases.split_at(boundary?);
+    let first: String = first.iter().map(|phrase| phrase.text.as_str()).collect();
+    let second: String = second.iter().map(|phrase| phrase.text.as_str()).collect();
+    Some(format!("{first}\n{second}\n最上川"))
 }
 
 pub(crate) fn detect_senryu(phrases: &[Phrase]) -> Option<String> {
@@ -168,7 +179,7 @@ pub(crate) fn detect_senryu(phrases: &[Phrase]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{count_mora, is_mogamigawa, sanitize_text, split_into_phrases};
+    use super::{count_mora, detect_mogamigawa, sanitize_text, split_into_phrases};
     use lindera::Tokenizer;
 
     fn detect_senryu(text: &str, tokenizer: &Tokenizer) -> Option<String> {
@@ -196,7 +207,7 @@ mod tests {
             "コーヒーは 朝に飲みます",
         ] {
             assert!(
-                is_mogamigawa(&split_into_phrases(text, &tokenizer).unwrap()),
+                detect_mogamigawa(&split_into_phrases(text, &tokenizer).unwrap()).is_some(),
                 "{text}"
             );
         }
@@ -207,7 +218,7 @@ mod tests {
             "朝ごはんを食べましたよ",
         ] {
             assert!(
-                !is_mogamigawa(&split_into_phrases(text, &tokenizer).unwrap()),
+                detect_mogamigawa(&split_into_phrases(text, &tokenizer).unwrap()).is_none(),
                 "{text}"
             );
         }

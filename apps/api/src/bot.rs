@@ -103,9 +103,7 @@ impl Bot {
             Event::MessageUpdated { body } if !body.message.user.bot => {
                 self.handle_updated(&body.message).await
             }
-            Event::MessageDeleted { body } => {
-                self.store.remove(body.message.id).await.map_err(Into::into)
-            }
+            Event::MessageDeleted { body } => self.handle_deleted(body.message.id).await,
             Event::Joined => {
                 tracing::debug!("Bot joined a channel");
                 Ok(())
@@ -140,8 +138,11 @@ impl Bot {
         let Some(phrases) = senryu::split_into_phrases(&text, &self.tokenizer) else {
             return Ok(());
         };
-        if senryu::is_mogamigawa(&phrases) {
+        if let Some(verse) = senryu::detect_mogamigawa(&phrases) {
             if self.store.is_mogamigawa_enabled(message.channel_id).await? {
+                self.store
+                    .record_mogamigawa(message.id, message.channel_id, &verse)
+                    .await?;
                 self.complete_mogamigawa(message).await?;
             }
             return Ok(());
@@ -165,15 +166,25 @@ impl Bot {
     }
 
     async fn handle_updated(&self, message: &Message) -> Result<()> {
-        let verse = match commands::arguments(&self.mention, &message.plain_text) {
+        let phrases = match commands::arguments(&self.mention, &message.plain_text) {
             Some(_) => None,
-            None => senryu::split_into_phrases(&message.verse_text(), &self.tokenizer)
-                .and_then(|phrases| senryu::detect_senryu(&phrases)),
+            None => senryu::split_into_phrases(&message.verse_text(), &self.tokenizer),
         };
+        let verse = phrases.as_deref().and_then(senryu::detect_senryu);
+        let mogamigawa = phrases.as_deref().and_then(senryu::detect_mogamigawa);
         let allow_new = verse.is_some() && self.store.is_enabled(message.channel_id).await?;
         self.store
             .revise(message.id, message.channel_id, verse.as_deref(), allow_new)
             .await?;
+        self.store
+            .revise_mogamigawa(message.id, mogamigawa.as_deref())
+            .await?;
+        Ok(())
+    }
+
+    async fn handle_deleted(&self, message_id: uuid::Uuid) -> Result<()> {
+        self.store.remove(message_id).await?;
+        self.store.revise_mogamigawa(message_id, None).await?;
         Ok(())
     }
 }
