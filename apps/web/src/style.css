@@ -1,16 +1,14 @@
 html {
   min-width: 320px;
 }
+
 body {
   margin: 0;
 }
+
 a,
 button,
 input,
 textarea {
   -webkit-tap-highlight-color: transparent;
-}
-::selection {
-  background: #9ad9bd;
-  color: #10291f;
 }

@@ -1,28 +1,55 @@
 # rachite 開発引き継ぎ
 
-仕様の基準は [specs.md](specs.md) です。現時点の合意は設計までです。以下は実装に着手するときの参照先と進め方です。
+仕様は [specs.md](specs.md)、起動手順は [README.md](../README.md) を参照してください。この文書は Codex で開発を再開するための作業状況です。
 
-## リポジトリと参照先
+## 再開時に確認すること
 
-- `rachite` は React + MUI／Axum のフルスタックテンプレートです。`apps/web` と `apps/api` を使い、Bot のコードは `apps/api/src/bot/` に置きます。Bot と Web API で使う川柳の処理は `apps/api/src/senryu/` にまとめる想定です。
-- テンプレートは SQLite、メールアドレス・パスワード認証、サンプルの `items` CRUD を備えています。これらは MariaDB、公開経路の Hard 認証、川柳一覧とコマンド案内に置き換えます。Vite／nginx の `/api` プロキシと Axum の OpenAPI 基盤は再利用できます。現状の詳細は [TEMPLATE_REQUIREMENTS.md](TEMPLATE_REQUIREMENTS.md) にあります。
-- 旧 Bot は同じ親ディレクトリの `../test2` です。コマンドの入口は `src/usecase/bot_service.rs`、コマンド本体は `src/usecase/commands/`、川柳判定は `src/domain/senryu.rs`、イベント処理は `src/handler/handler.rs`、スタンプ送信は `src/infrastructure/worker.rs` にあります。各モジュールのテストと `tests/test.rs` が互換性の確認に使えます。
-- Bot 登録・イベント購読は [Bot Console の設定資料](https://github.com/traPtitech/traQ-bot-console/blob/dev/src/docs/bot/settings.md) と [イベント定義](https://github.com/traPtitech/traQ-bot-console/blob/dev/src/botEvents.ts)、イベントの JSON は [メッセージイベント資料](https://github.com/traPtitech/traQ-bot-console/blob/dev/src/docs/bot/events/message.md) を参照してください。送信 API は [traQ v3 OpenAPI](https://github.com/traPtitech/traQ/blob/master/docs/v3-api.yaml) にあります。
+2026年11月23日時点の作業ブランチは `feat` です。初版の実装、開発起動の修正、`stampbomb` の修正とテストは作業ツリーにあり、新規ファイルも含まれています。別のチェックアウトで再開する場合は、元の作業ツリーの `git status --short --branch` と見比べてください。
 
-## 実装順
+`apps/web` は React + TypeScript + MUI、`apps/api` は Rust + Axum + Tokio です。Axum と traQ Bot は同じプロセスで起動し、SQLx 経由で MariaDB を使います。テンプレートの要件は [TEMPLATE_REQUIREMENTS.md](TEMPLATE_REQUIREMENTS.md) に記録されています。
 
-1. **旧 Bot の移植。** コマンドの振り分けは小さな `match` を起点にし、機能ごとに必要な分だけ分けます。WebSocket の受信と HTTP 返信の組み合わせはそのまま使い、通常コマンドは受信順に処理します。外部 HTTP にタイムアウトを設け、長い `stampbomb` は単一ワーカーに渡します。旧版の50 ms待ちは一つのジョブの分割送信間だけなので、移植時はジョブの境目でも適用します。
-2. **MariaDB と川柳の連携。** SQLx の `mysql` ドライバと `MySqlPool`、MariaDB 用のマイグレーションを導入します。`DATABASE_URL`、`.env.example`、`compose.yaml`、`Dockerfile`、`.github/workflows/ci.yml`、SQLite を使っている `apps/api/tests/api.rs` も確認します。DB 統合テストは MariaDB で実行します。設定行がない場合は検出オンで、DB 読み取りエラーは通常のエラーとして扱います。
-3. **Web の一覧とヘルプ。** 抽出した句を返す読み取り API と、一度に一定件数を表示する MUI 一覧を作ります。コマンド案内は Bot のヘルプと共通の定義を使います。画面と `/api` を Hard 認証の同じ公開経路に置き、API に直接アクセスできる別の公開経路がないことを確認します。
-4. **テスト用 Bot で確認してから本番を切り替え。** Bot Console では通常投稿のために `MESSAGE_CREATED`、未参加チャンネルでの呼び出しのために `MENTION_MESSAGE_CREATED`、掲載結果の追従のために `MESSAGE_UPDATED` と `MESSAGE_DELETED` の購読を確認します。メンションは `MESSAGE_CREATED` として配信されます。未参加チャンネルからの `join` はテスト用 Bot で実際に確認します。本番では旧 Bot を停止してから新 Bot を起動します。
+## 今回の変更
 
-## 完了確認
+- `mise run dev` は Compose の MariaDB を起動し、ヘルスチェックが通ってから API と Web を起動します。以前は MariaDB が停止していると API が接続タイムアウトで終了し、Vite が `/api` を転送できませんでした。既に稼働している MariaDB を使う場合は、`.env` に `DATABASE_URL` を設定して `mise run dev --no-compose-db` を使います。[mise.toml](../mise.toml)
+- `stampbomb` は、指定されたリンクを `plainText` から読み取れないとき、traQ イベントの元の `text` から同じ引数位置のリンクを取得します。traQ は埋め込み表示する URL を `plainText` で `[引用メッセージ]` に置き換えます。通常の URL と traQ の引用形式を扱い、後続のリンクを対象に取り違えないことをテストしています。[stampbomb の実装](../apps/api/src/bot/commands/stampbomb.rs) · [traQ の本文変換](https://github.com/traPtitech/traQ/blob/master/utils/message/parser.go)
+- Bot の全コマンドを、模擬 traQ の HTTP API と組み合わせてテストします。`stampbomb` は対象メッセージとキュー投入内容、無効な入力、キュー満杯を確認します。`senryu status` / `off` / `on` の設定保存は専用 MariaDB で確認します。[コマンドのテスト](../apps/api/src/bot/commands/tests.rs)
 
-- メンションへの応答と旧コマンドが、旧版と互換の名前・引数で動きます。ガチャは旧版と同じ条件で抽選します。
-- `stampbomb` の複数ジョブを連続して投入しても、送信間隔が維持されます。キュー満杯と送信タイムアウトの扱いも確認します。
-- 運用者だけが、コマンドを実行したチャンネルの川柳検出設定を変更できます。設定未登録、明示的なオン、明示的なオフを確認します。
-- 投稿で一覧に1件追加され、同じ元メッセージ ID で重複しません。編集での更新、初めて検出された句の追加、検出できなくなった句と削除された投稿の取り下げを確認します。検出オフの間も掲載済みの句への編集・削除は反映されます。
-- 未認証のアクセスは Web と一覧 API の両方で拒否されます。認証済みの部員は一覧とコマンドの使い方を閲覧できます。
-- デプロイ先で Web にアクセスがない間も Bot が稼働します。Web API のヘルスチェックと Bot の WebSocket 接続状況は別々に確認できるようにします。
+## Bot 接続の確認
 
-川柳判定の作り直し、停止中の変更との照合、追加コマンド、LLM の用途はそれぞれ別の作業として扱います。初版では旧 Bot の互換動作と、川柳の掲載・更新・取り下げを優先します。
+Bot Console でテスト用 Bot が WebSocket Mode になっていることを確認します。`.env` の `TRAQ_BOT_ID` と `TRAQ_BOT_TOKEN` には同じ Bot の ID と Access Token を入れ、`TRAQ_BOT_NAME` にはメンションに使う Bot 名を設定します。アプリが認証ヘッダーに `Bearer ` を付けます。設定後は `mise run dev` を再起動し、`curl -fsS http://127.0.0.1:5173/api/bot/status` が `{"status":"connected"}` を返すことを確認します。[Bot Console](https://bot-console.trap.jp/) · [認証ヘッダーの実装](../apps/api/src/traq/client.rs)
+
+今回の `401 Unauthorized` は、当時の `.env` のトークンで traQ の WebSocket 接続先と通常の API に直接問い合わせても再現しました。同じエラーが出たら、Bot Console の現在の Access Token と `.env` の `TRAQ_BOT_TOKEN` を照合してください。
+
+## 実装の入口
+
+| 用途                     | 編集箇所                                                                                                                                                                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 起動・環境変数           | [main.rs](../apps/api/src/main.rs)、[config.rs](../apps/api/src/config.rs)。起動時に MariaDB のマイグレーションを適用します。                                                                                                                    |
+| Bot の受信・イベント処理 | [bot.rs](../apps/api/src/bot.rs)。WebSocket で受信し、通常イベントを受信順に処理します。イベント型と返信用 HTTP クライアントは `apps/api/src/traq/` にあります。                                                                                 |
+| コマンド追加・ヘルプ     | [commands.rs](../apps/api/src/bot/commands.rs) で振り分けとヘルプ定義を登録します。コマンド本体は `apps/api/src/bot/commands/` に1コマンドずつ置き、ガチャの抽選処理は共用します。Bot の `help` と Web の `/api/commands` は同じ定義を使います。 |
+| スタンプ送信             | [bot/stampbomb.rs](../apps/api/src/bot/stampbomb.rs)。処理は単一ワーカーに渡し、100個ずつに分けて送ります。50 ms の待機はジョブの境目にも適用します。                                                                                            |
+| 川柳の判定・保存         | [detect.rs](../apps/api/src/senryu/detect.rs) に旧 Bot の判定を移植済みです。[store.rs](../apps/api/src/senryu/store.rs) がチャンネル設定、保存・更新・削除、一覧ページ分割を担当します。                                                        |
+| HTTP API                 | [http.rs](../apps/api/src/http.rs)。川柳一覧は `/api/senryu`、コマンド案内は `/api/commands`、DB と Bot の確認はそれぞれ `/api/health` と `/api/bot/status` です。                                                                               |
+| Web                      | [App.tsx](../apps/web/src/App.tsx) が React Router のルートを定義します。`/senryu` は川柳一覧、`/commands` は使い方、`/` は共通ナビゲーションだけで将来のトップページ用です。                                                                    |
+
+Rust は `bot.rs` + `bot/` のようにモジュール名と同じファイルを入口にします。機能の流れを追える構成を優先し、DB や traQ クライアントは必要な箇所から直接呼びます。Web の `pages/` は取得処理と画面構成、`components/` は表示部品を担当します。MUI の配色とアクセント `#0485F7` は [theme.ts](../apps/web/src/theme.ts) にあります。[HeroUI Default テーマ](https://heroui.com/en/themes) · [UXPin の UI デザインの基本原則](https://www.uxpin.com/studio/jp/blog-jp/ui-design-principles-ja/)
+
+## 川柳設定の最新仕様
+
+- `@BOT_lachite senryu status` / `on` / `off` は、チャンネルにコマンドを投稿できる人なら誰でも使えます。対象は投稿したチャンネルです。旧設定の `RACHITE_OPERATOR_IDS` は廃止済みです。
+- チャンネル設定の初期値はオンです。オフは新規掲載だけを止めます。掲載済みの句は、元投稿の編集で再判定し、判定から外れた場合や元投稿が削除された場合に取り下げます。
+- 新規投稿からの初回検出時は traQ に通知します。編集による反映は一覧だけです。同じ元メッセージ ID の重複登録は DB の一意制約で防ぎます。
+
+## 検証済みの範囲
+
+- WSL で停止中の MariaDB から `mise run dev` を起動し、Vite 経由の `/api/health`、`/api/senryu`、`/api/commands`、`/swagger-ui/` が HTTP 200 を返すことを確認しました。`--no-compose-db` での起動も確認済みです。
+- `mise run test` と `mise run check` は通過しました。専用の MariaDB 11.8 を起動し、`TEST_DATABASE_URL` を設定して `cargo test --workspace --locked -- --include-ignored` を実行したところ、DB を使う2件を含む18件が通過しました。GitHub Actions の API ジョブも同じ Cargo コマンドを実行します。[CI 設定](../.github/workflows/ci.yml)
+- 模擬 traQ の WebSocket から `stampbomb w 1234` の投稿イベントを送り、引用先のメッセージに対して合計1,234回分が13リクエストで送信されることを確認しました。実際の traQ では、ユーザー提供の画面で `senryu status` への応答を確認できています。
+- 前回は Web の本番ビルドと、テストデータを使った `/`、`/senryu`、`/commands` のブラウザ表示を確認しました。
+
+## 次に確認すること
+
+1. テスト Bot で `MESSAGE_CREATED`、`MENTION_MESSAGE_CREATED`、`MESSAGE_UPDATED`、`MESSAGE_DELETED` を購読します。未参加チャンネルからの `join`、引用リンクを使った `stampbomb` の少数回送信、一般ユーザーによる `senryu off` / `on`、投稿・編集・削除の Web 一覧への反映を実際の traQ で確認します。[メッセージイベント](https://github.com/traPtitech/traQ-bot-console/blob/dev/src/docs/bot/events/message.md) · [traQ v3 OpenAPI](https://github.com/traPtitech/traQ/blob/master/docs/v3-api.yaml)
+2. 公開前に Web と `/api` を同じ Hard 認証の配下に置き、未認証で両方にアクセスできないことと、Axum に直接アクセスできないことを確認します。テスト Bot での確認後に、旧 Bot を停止して新 Bot を1インスタンスで起動します。
+
+旧 Bot の互換性を確認する際は、隣の `../test2` にある `src/usecase/bot_service.rs`、`src/usecase/commands/`、`tests/test.rs` を参照してください。川柳判定の作り直し、停止中のイベントとの照合、追加コマンド、LLM の用途は別の作業です。

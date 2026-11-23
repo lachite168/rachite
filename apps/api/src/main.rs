@@ -1,51 +1,69 @@
 use anyhow::Context;
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
-use starter_api::{AppState, app};
-use std::{str::FromStr, time::Duration};
+use rachite_api::{
+    AppState, app,
+    bot::{self, BotStatus},
+    config::Config,
+    senryu::SenryuStore,
+};
+use sqlx::mysql::MySqlPoolOptions;
+use tokio::{net::TcpListener, sync::watch};
 use tracing_subscriber::EnvFilter;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
-    let secret = std::env::var("JWT_SECRET").context("JWT_SECRET is required; see .env.example")?;
-    anyhow::ensure!(
-        secret.len() >= 32 && !secret.starts_with("replace-with-"),
-        "Set a random JWT_SECRET with at least 32 characters"
-    );
-    let options = SqliteConnectOptions::from_str(
-        &std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://app.db".into()),
-    )?
-    .create_if_missing(true)
-    .foreign_keys(true)
-    .journal_mode(SqliteJournalMode::Wal)
-    .busy_timeout(Duration::from_secs(5));
-    let db = SqlitePoolOptions::new()
+
+    let config = Config::load()?;
+    let db = MySqlPoolOptions::new()
         .max_connections(5)
-        .connect_with(options)
-        .await?;
+        .connect(&config.database_url)
+        .await
+        .context("Could not connect to MariaDB")?;
     sqlx::migrate!().run(&db).await?;
-    let origin = std::env::var("CORS_ORIGIN").unwrap_or_else(|_| "http://localhost:5173".into());
-    let state = AppState {
-        db,
-        jwt_secret: secret.into(),
-        http: reqwest::Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()?,
+
+    let listener = TcpListener::bind((config.host.as_str(), config.port)).await?;
+    let store = SenryuStore::new(db);
+    let initial_status = if config.bot.is_some() {
+        BotStatus::Disconnected
+    } else {
+        BotStatus::Disabled
     };
-    let address = format!(
-        "{}:{}",
-        std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".into()),
-        std::env::var("PORT").unwrap_or_else(|_| "3000".into())
+    let (bot_status, status) = watch::channel(initial_status);
+    let state = AppState::new(
+        store.clone(),
+        config.traq_origin.clone(),
+        config.command_mention.clone(),
+        status,
     );
-    let listener = tokio::net::TcpListener::bind(&address).await?;
-    tracing::info!(%address, "API ready");
-    axum::serve(listener, app(state, &origin)?)
+    let bot_task = config
+        .bot
+        .map(|bot_config| {
+            bot::start(
+                bot_config,
+                config.traq_origin,
+                config.command_mention,
+                store,
+                bot_status,
+            )
+        })
+        .transpose()?;
+
+    tracing::info!(address = %listener.local_addr()?, "API ready");
+    let result = axum::serve(listener, app(state))
         .with_graceful_shutdown(shutdown())
-        .await?;
+        .await;
+
+    if let Some(task) = bot_task {
+        task.abort();
+        let _ = task.await;
+    }
+    result?;
     Ok(())
 }
+
 async fn shutdown() {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
