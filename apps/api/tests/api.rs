@@ -1,8 +1,8 @@
 use axum_test::TestServer;
 use rachite_api::{AppState, app, bot::BotStatus, senryu::SenryuStore};
 use serde_json::{Value, json};
-use sqlx::mysql::MySqlPoolOptions;
-use tokio::sync::watch;
+use sqlx::{MySqlPool, mysql::MySqlPoolOptions};
+use tokio::sync::{OnceCell, watch};
 use uuid::Uuid;
 
 fn make_server(store: SenryuStore) -> TestServer {
@@ -13,6 +13,16 @@ fn make_server(store: SenryuStore) -> TestServer {
         "@BOT_lachite".into(),
         bot_status,
     )))
+}
+
+async fn test_database() -> MySqlPool {
+    static MIGRATED: OnceCell<()> = OnceCell::const_new();
+    let url = std::env::var("TEST_DATABASE_URL").expect("Set TEST_DATABASE_URL to a test database");
+    let db = MySqlPoolOptions::new().connect(&url).await.unwrap();
+    MIGRATED
+        .get_or_init(|| async { sqlx::migrate!().run(&db).await.unwrap() })
+        .await;
+    db
 }
 
 #[tokio::test]
@@ -43,11 +53,16 @@ async fn command_catalog_bot_status_and_invalid_cursor() {
         .get("/senryu?before=invalid")
         .await
         .assert_status_bad_request();
+    server
+        .get("/mogamigawa?before=legacy.invalid")
+        .await
+        .assert_status_bad_request();
 
     let response = server.get("/openapi.json").await;
     response.assert_status_ok();
     let document: Value = response.json();
     assert!(document["paths"]["/api/senryu"]["get"].is_object());
+    assert!(document["paths"]["/api/mogamigawa"]["get"].is_object());
 
     let response = server.get("/swagger-ui/swagger-initializer.js").await;
     response.assert_status_ok();
@@ -57,9 +72,7 @@ async fn command_catalog_bot_status_and_invalid_cursor() {
 #[tokio::test]
 #[ignore = "requires TEST_DATABASE_URL for a dedicated MariaDB database"]
 async fn senryu_lifecycle_and_pagination() {
-    let url = std::env::var("TEST_DATABASE_URL").expect("Set TEST_DATABASE_URL to a test database");
-    let db = MySqlPoolOptions::new().connect(&url).await.unwrap();
-    sqlx::migrate!().run(&db).await.unwrap();
+    let db = test_database().await;
     let store = SenryuStore::new(db);
     let server = make_server(store.clone());
     server.get("/health").await.assert_status_ok();
@@ -143,5 +156,78 @@ async fn senryu_lifecycle_and_pagination() {
 
     for id in newest {
         store.remove(id).await.unwrap();
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated MariaDB database"]
+async fn mogamigawa_paginates_dated_verses_before_legacy_links() {
+    let db = test_database().await;
+    let server = make_server(SenryuStore::new(db.clone()));
+    let mut dated_ids: Vec<_> = (0..20).map(|_| Uuid::now_v7()).collect();
+    let mut legacy_ids: Vec<_> = (0..21).map(|_| Uuid::now_v7()).collect();
+    dated_ids.sort_unstable_by(|a, b| b.cmp(a));
+    legacy_ids.sort_unstable_by(|a, b| b.cmp(a));
+    let channel = Uuid::now_v7();
+    let verse = "古池や\n蛙飛びこむ\n最上川";
+    for id in &dated_ids {
+        sqlx::query(
+            "INSERT INTO mogamigawa_responses (message_id, channel_id, verse, detected_at)
+             VALUES (?, ?, ?, '2026-11-23 01:02:03')",
+        )
+        .bind(id.to_string())
+        .bind(channel.to_string())
+        .bind(verse)
+        .execute(&db)
+        .await
+        .unwrap();
+    }
+    for id in &legacy_ids {
+        sqlx::query("INSERT INTO mogamigawa_responses (message_id) VALUES (?)")
+            .bind(id.to_string())
+            .execute(&db)
+            .await
+            .unwrap();
+    }
+
+    let first = server.get("/mogamigawa").await.json::<Value>();
+    let first_items = first["items"].as_array().unwrap();
+    assert_eq!(first_items.len(), 20);
+    assert_eq!(first_items[0]["message_id"], dated_ids[0].to_string());
+    assert_eq!(first_items[19]["message_id"], dated_ids[19].to_string());
+    assert_eq!(first_items[0]["verse"], verse);
+    assert_eq!(first_items[0]["channel_id"], channel.to_string());
+    assert_eq!(first_items[0]["detected_at"], "2026-11-23T01:02:03Z");
+
+    let cursor = first["next_cursor"].as_str().unwrap();
+    let second = server
+        .get(&format!("/mogamigawa?before={cursor}"))
+        .await
+        .json::<Value>();
+    let legacy_items = second["items"].as_array().unwrap();
+    assert_eq!(legacy_items.len(), 20);
+    assert_eq!(legacy_items[0]["message_id"], legacy_ids[0].to_string());
+    assert_eq!(legacy_items[0]["verse"], Value::Null);
+    assert_eq!(legacy_items[0]["detected_at"], Value::Null);
+    assert_eq!(
+        legacy_items[0]["source_url"],
+        format!("https://q.trap.jp/messages/{}", legacy_ids[0])
+    );
+
+    let cursor = second["next_cursor"].as_str().unwrap();
+    let third = server
+        .get(&format!("/mogamigawa?before={cursor}"))
+        .await
+        .json::<Value>();
+    assert_eq!(third["items"].as_array().unwrap().len(), 1);
+    assert_eq!(third["items"][0]["message_id"], legacy_ids[20].to_string());
+    assert_eq!(third["next_cursor"], Value::Null);
+
+    for id in dated_ids.into_iter().chain(legacy_ids) {
+        sqlx::query("DELETE FROM mogamigawa_responses WHERE message_id = ?")
+            .bind(id.to_string())
+            .execute(&db)
+            .await
+            .unwrap();
     }
 }

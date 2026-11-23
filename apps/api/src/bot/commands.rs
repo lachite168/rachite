@@ -4,6 +4,7 @@ mod join;
 mod lachitegacha;
 mod leave;
 mod mention;
+mod mogamigawa;
 mod n3gacha;
 mod ping;
 mod senryu;
@@ -43,6 +44,9 @@ const COMMANDS: &[Command] = &[
     senryu::STATUS,
     senryu::ON,
     senryu::OFF,
+    mogamigawa::STATUS,
+    mogamigawa::ON,
+    mogamigawa::OFF,
     help::HELP,
 ];
 
@@ -75,6 +79,9 @@ impl Bot {
             Some("stampgacha") => stampgacha::execute(self, args.next()).await?,
             Some("stampbomb") => stampbomb::execute(self, message, args).await?,
             Some("senryu") => senryu::execute(self, message.channel_id, args.next()).await?,
+            Some("mogamigawa") => {
+                mogamigawa::execute(self, message.channel_id, args.next()).await?
+            }
             Some("help") => help::execute(&self.mention),
             _ => return Ok(()),
         };

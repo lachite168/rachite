@@ -1,13 +1,15 @@
-export interface Senryu {
+export type VerseKind = 'senryu' | 'mogamigawa'
+
+export interface Verse {
   message_id: string
-  channel_id: string
-  verse: string
-  detected_at: string
+  channel_id: string | null
+  verse: string | null
+  detected_at: string | null
   source_url: string
 }
 
-export interface SenryuPage {
-  items: Senryu[]
+interface VersePage {
+  items: Verse[]
   next_cursor: string | null
 }
 
@@ -34,9 +36,9 @@ async function get<T>(path: string, signal: AbortSignal): Promise<T> {
 }
 
 export const api = {
-  senryu: (before: string | null, signal: AbortSignal) =>
-    get<SenryuPage>(
-      before ? '/senryu?before=' + encodeURIComponent(before) : '/senryu',
+  verses: (kind: VerseKind, before: string | null, signal: AbortSignal) =>
+    get<VersePage>(
+      `/${kind}${before ? '?before=' + encodeURIComponent(before) : ''}`,
       signal
     ),
   commands: (signal: AbortSignal) => get<CommandCatalog>('/commands', signal)

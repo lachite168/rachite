@@ -21,6 +21,21 @@ mise run dev
 
 Compose で全体を起動する場合は `mise run up` を実行します。川柳一覧は [http://localhost:8080/senryu](http://localhost:8080/senryu) で確認できます。Compose 内の Axum には nginx が接続します。DB のパスワードに URL の予約文字を使う場合は、URL エンコードした `DATABASE_URL` と `COMPOSE_DATABASE_URL` を設定してください。
 
+## Bot のプロフィールを確認・更新する
+
+リポジトリのルートで実行します。既存の `.env` または環境変数に設定した `TRAQ_BOT_TOKEN` の Bot が対象です。`TRAQ_ORIGIN` の既定値は `https://q.trap.jp` です。
+
+```bash
+# 現在の表示名とひとことを表示
+node --env-file-if-exists=.env scripts/traq-profile.mjs
+
+# ひとことを更新
+node --env-file-if-exists=.env scripts/traq-profile.mjs --bio="川柳を探しています"
+
+# ひとことを空にし、表示名も更新
+node --env-file-if-exists=.env scripts/traq-profile.mjs --bio= --display-name="らちて"
+```
+
 ## 確認
 
 | コマンド                                               | 用途                                                              |
