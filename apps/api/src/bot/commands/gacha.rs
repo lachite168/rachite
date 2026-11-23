@@ -25,16 +25,19 @@ pub(super) async fn draw(client: &TraqClient, search: &str, mode: Match) -> Resu
         .await?
         .into_iter()
         .filter(|stamp| mode.accepts(&stamp.name, &query))
+        .map(|stamp| stamp.name)
         .collect::<Vec<_>>();
 
-    let reply = match candidates.choose(&mut rand::rng()) {
-        Some(stamp) => format!(":{}.ex-large:", stamp.name),
-        None => match mode {
-            Match::Prefix => format!("{search} のスタンプが見つかりませんでした"),
-            Match::Contains => format!("{search} を含むスタンプが見つかりませんでした"),
-        },
-    };
-    Ok(reply)
+    Ok(draw_reply(&candidates).unwrap_or_else(|| match mode {
+        Match::Prefix => format!("{search} のスタンプが見つかりませんでした"),
+        Match::Contains => format!("{search} を含むスタンプが見つかりませんでした"),
+    }))
+}
+
+pub(super) fn draw_reply(candidates: &[String]) -> Option<String> {
+    candidates
+        .choose(&mut rand::rng())
+        .map(|name| format!(":{name}.ex-large:"))
 }
 
 #[cfg(test)]

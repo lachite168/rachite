@@ -1,3 +1,4 @@
+use axum::http::StatusCode;
 use axum_test::TestServer;
 use rachite_api::{AppState, app, bot::BotStatus, senryu::SenryuStore};
 use serde_json::{Value, json};
@@ -53,10 +54,12 @@ async fn command_catalog_bot_status_and_invalid_cursor() {
         .get("/senryu?before=invalid")
         .await
         .assert_status_bad_request();
-    server
-        .get("/mogamigawa?before=legacy.invalid")
-        .await
-        .assert_status_bad_request();
+    let invalid_cursor = server.get("/mogamigawa?before=legacy.invalid").await;
+    invalid_cursor.assert_status_bad_request();
+    invalid_cursor.assert_json(&json!({
+        "code": "invalid_cursor",
+        "message": "一覧のページ指定が無効です"
+    }));
 
     let response = server.get("/openapi.json").await;
     response.assert_status_ok();
@@ -70,10 +73,30 @@ async fn command_catalog_bot_status_and_invalid_cursor() {
 }
 
 #[tokio::test]
+async fn database_backed_routes_report_service_unavailable() {
+    let db = MySqlPoolOptions::new()
+        .connect_lazy("mysql://rachite:unused@127.0.0.1/rachite_test")
+        .unwrap();
+    db.close().await;
+    let server = make_server(SenryuStore::new(db));
+
+    for path in ["/health", "/senryu", "/mogamigawa"] {
+        let response = server.get(path).await;
+        response.assert_status(StatusCode::SERVICE_UNAVAILABLE);
+        response.assert_json(&json!({
+            "code": "database_unavailable",
+            "message": "データベースに接続できません"
+        }));
+    }
+    server.get("/commands").await.assert_status_ok();
+    server.get("/bot/status").await.assert_status_ok();
+}
+
+#[tokio::test]
 #[ignore = "requires TEST_DATABASE_URL for a dedicated MariaDB database"]
 async fn senryu_lifecycle_and_pagination() {
     let db = test_database().await;
-    let store = SenryuStore::new(db);
+    let store = SenryuStore::new(db.clone());
     let server = make_server(store.clone());
     server.get("/health").await.assert_status_ok();
 
@@ -123,28 +146,56 @@ async fn senryu_lifecycle_and_pagination() {
     );
 
     let mut newest = Vec::new();
-    for _ in 0..20 {
+    for _ in 0..21 {
         let id = Uuid::now_v7();
         store.record(id, channel, "ページ分割").await.unwrap();
         newest.push(id);
     }
+    sqlx::query(
+        "UPDATE senryu
+         SET detected_at = CASE message_id
+             WHEN ? THEN '2026-11-23 01:02:03.123454'
+             WHEN ? THEN '2026-11-23 01:02:03.123455'
+             ELSE '2026-11-23 01:02:03.123456'
+         END
+         WHERE channel_id = ?",
+    )
+    .bind(original.to_string())
+    .bind(discovered_in_edit.to_string())
+    .bind(channel.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+    newest.sort_unstable_by(|a, b| b.cmp(a));
+
     let first = server.get("/senryu").await.json::<Value>();
-    assert_eq!(first["items"].as_array().unwrap().len(), 20);
-    let cursor = first["next_cursor"].as_str().unwrap();
-    let boundary = first["items"][19]["message_id"]
-        .as_str()
+    let first_ids: Vec<_> = first["items"]
+        .as_array()
         .unwrap()
-        .parse()
-        .unwrap();
-    store.remove(boundary).await.unwrap();
+        .iter()
+        .map(|item| item["message_id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        first_ids,
+        newest[..20].iter().map(Uuid::to_string).collect::<Vec<_>>()
+    );
+    let cursor = first["next_cursor"].as_str().unwrap();
+    store.remove(newest[19]).await.unwrap();
     let second = server
         .get(&format!("/senryu?before={cursor}"))
         .await
         .json::<Value>();
+    let second_ids: Vec<_> = second["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["message_id"].as_str().unwrap())
+        .collect();
     assert_eq!(
-        second["items"][0]["message_id"],
-        discovered_in_edit.to_string()
+        second_ids,
+        [newest[20], discovered_in_edit, original].map(|id| id.to_string())
     );
+    assert_eq!(second["next_cursor"], Value::Null);
 
     store.revise(original, channel, None, false).await.unwrap();
     store.remove(discovered_in_edit).await.unwrap();

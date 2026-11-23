@@ -31,7 +31,7 @@ description = "Format Web and API code"
 run = "npm run format"
 
 [tasks.test]
-description = "Run API and Bot tests"
+description = "Run Web, API and Bot tests"
 run = "npm test"
 
 [tasks.check]

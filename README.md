@@ -40,7 +40,9 @@ node --env-file-if-exists=.env scripts/traq-profile.mjs --bio= --display-name="�
 
 | コマンド                                               | 用途                                                              |
 | ------------------------------------------------------ | ----------------------------------------------------------------- |
-| `mise run check`                                       | Web の型、lint と整形、通常の Rust テストを確認                   |
+| `mise run check`                                       | 型、lint、整形、Web と通常の Rust テストを確認                    |
+| `mise run test`                                        | Web と通常の Rust テストを実行                                    |
+| `npm run test:web`                                     | Web のテストだけを実行                                            |
 | `mise run build`                                       | Web と API を本番向けにビルド                                     |
 | `cargo test --workspace --locked -- --include-ignored` | `TEST_DATABASE_URL` に設定したテスト専用の MariaDB を含めてテスト |
 
