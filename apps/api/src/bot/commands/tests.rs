@@ -11,15 +11,29 @@ use axum::{
     routing::{get, post},
 };
 use serde_json::{Value, json};
-use sqlx::mysql::MySqlPoolOptions;
-use tokio::{net::TcpListener, sync::mpsc};
+use sqlx::{MySqlPool, mysql::MySqlPoolOptions};
+use tokio::{
+    net::TcpListener,
+    sync::{OnceCell, mpsc},
+};
 use uuid::Uuid;
 
 const MENTION: &str = "@BOT_lachite";
 const BOT_ID: Uuid = Uuid::from_u128(1);
 const STAMP_ID: Uuid = Uuid::from_u128(2);
+const MOGAMIGAWA_STAMPS: [Uuid; 3] = [Uuid::from_u128(8), Uuid::from_u128(9), Uuid::from_u128(10)];
 
 type Request = (String, Value);
+
+async fn test_database() -> MySqlPool {
+    static MIGRATED: OnceCell<()> = OnceCell::const_new();
+    let url = std::env::var("TEST_DATABASE_URL").expect("Set TEST_DATABASE_URL to a test database");
+    let db = MySqlPoolOptions::new().connect(&url).await.unwrap();
+    MIGRATED
+        .get_or_init(|| async { sqlx::migrate!().run(&db).await.unwrap() })
+        .await;
+    db
+}
 
 struct TestBot {
     bot: Bot,
@@ -37,6 +51,10 @@ impl TestBot {
     }
 
     async fn with_store(store: SenryuStore) -> Self {
+        Self::with_failing_stamp(store, None).await
+    }
+
+    async fn with_failing_stamp(store: SenryuStore, failing_stamp: Option<Uuid>) -> Self {
         let (sender, requests) = mpsc::unbounded_channel();
         let api = Router::new()
             .route(
@@ -48,18 +66,27 @@ impl TestBot {
                         {"name": "N3_fox", "id": Uuid::from_u128(5)},
                         {"name": "old_n3", "id": Uuid::from_u128(6)},
                         {"name": "big_STAR", "id": Uuid::from_u128(7)},
-                        {"name": "W", "id": STAMP_ID}
+                        {"name": "W", "id": STAMP_ID},
+                        {"name": "mogamigawa03_gawa", "id": MOGAMIGAWA_STAMPS[2]},
+                        {"name": "mogamigawa01_mo", "id": MOGAMIGAWA_STAMPS[0]},
+                        {"name": "mogamigawa02_gami", "id": MOGAMIGAWA_STAMPS[1]}
                     ]))
                 }),
             )
             .route(
                 "/api/v3/{*path}",
                 post(
-                    |State(sender): State<mpsc::UnboundedSender<Request>>,
-                     OriginalUri(uri): OriginalUri,
-                     Json(body): Json<Value>| async move {
+                    move |State(sender): State<mpsc::UnboundedSender<Request>>,
+                          OriginalUri(uri): OriginalUri,
+                          Json(body): Json<Value>| async move {
                         sender.send((uri.path().into(), body)).unwrap();
-                        StatusCode::NO_CONTENT
+                        if failing_stamp
+                            .is_some_and(|id| uri.path().ends_with(&format!("/stamps/{id}")))
+                        {
+                            StatusCode::SERVICE_UNAVAILABLE
+                        } else {
+                            StatusCode::NO_CONTENT
+                        }
                     },
                 ),
             )
@@ -85,12 +112,16 @@ impl TestBot {
 
     fn message(&self, command: &str) -> Message {
         let text = format!("{MENTION} {command}");
+        self.channel_message(&text, &text)
+    }
+
+    fn channel_message(&self, text: &str, plain_text: &str) -> Message {
         serde_json::from_value(json!({
             "id": Uuid::now_v7(),
             "channelId": self.channel,
             "user": {"name": "alice", "bot": false},
             "text": text,
-            "plainText": text,
+            "plainText": plain_text,
             "createdAt": chrono::Utc::now()
         }))
         .unwrap()
@@ -112,6 +143,22 @@ impl TestBot {
     async fn expect_reply(&mut self, command: &str, expected: &str) {
         self.send(command).await;
         assert_eq!(self.reply(), expected, "{command}");
+    }
+
+    fn expect_mogamigawa_reply_and_stamps(&mut self, message: &Message, stamps: &[Uuid]) {
+        assert_eq!(
+            self.reply(),
+            format!("最上川\n{}", self.bot.client.message_link(message.id))
+        );
+        for stamp in stamps {
+            let (path, body) = self.requests.try_recv().expect("expected a stamp request");
+            assert_eq!(
+                path,
+                format!("/api/v3/messages/{}/stamps/{stamp}", message.id)
+            );
+            assert_eq!(body, json!({"count": 1}));
+        }
+        assert!(self.requests.try_recv().is_err());
     }
 }
 
@@ -246,19 +293,20 @@ async fn stampbomb_rejects_invalid_arguments_without_enqueuing() {
 }
 
 #[tokio::test]
-async fn senryu_reports_usage_for_missing_or_invalid_actions() {
+async fn detection_commands_report_usage_for_missing_or_invalid_actions() {
     let mut test = TestBot::new().await;
     let usage = "使い方: `@BOT_lachite senryu <status|on|off>`";
     test.expect_reply("senryu", usage).await;
     test.expect_reply("senryu invalid", usage).await;
+    let usage = "使い方: `@BOT_lachite mogamigawa <status|on|off>`";
+    test.expect_reply("mogamigawa", usage).await;
+    test.expect_reply("mogamigawa invalid", usage).await;
 }
 
 #[tokio::test]
 #[ignore = "requires TEST_DATABASE_URL for a dedicated MariaDB database"]
 async fn senryu_commands_persist_settings_per_channel() {
-    let url = std::env::var("TEST_DATABASE_URL").expect("Set TEST_DATABASE_URL to a test database");
-    let db = MySqlPoolOptions::new().connect(&url).await.unwrap();
-    sqlx::migrate!().run(&db).await.unwrap();
+    let db = test_database().await;
     let mut test = TestBot::with_store(SenryuStore::new(db.clone())).await;
     let original_channel = test.channel;
     let on = "このチャンネルの川柳検出はオンです。";
@@ -274,6 +322,92 @@ async fn senryu_commands_persist_settings_per_channel() {
     test.expect_reply("senryu status", on).await;
     sqlx::query("DELETE FROM channel_settings WHERE channel_id = ?")
         .bind(original_channel.to_string())
+        .execute(&db)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated MariaDB database"]
+async fn mogamigawa_responds_once_and_uses_its_own_channel_setting() {
+    let db = test_database().await;
+    let mut test = TestBot::with_store(SenryuStore::new(db.clone())).await;
+    let on = "このチャンネルの最上川はオンです。";
+    let off = "このチャンネルの最上川はオフです。";
+    test.expect_reply("mogamigawa status", on).await;
+
+    let verse = "コーヒーは 朝に飲みます";
+    let literal_citation = format!("{verse} [引用メッセージ]");
+    let literal = test.channel_message(&literal_citation, &literal_citation);
+    test.bot.handle_created(&literal).await.unwrap();
+    assert!(test.requests.try_recv().is_err());
+
+    let link = test.bot.client.message_link(Uuid::now_v7());
+    let message = test.channel_message(&format!("{verse} {link}"), &literal_citation);
+    test.bot.handle_created(&message).await.unwrap();
+    test.expect_mogamigawa_reply_and_stamps(&message, &MOGAMIGAWA_STAMPS);
+    test.bot.handle_created(&message).await.unwrap();
+    assert!(test.requests.try_recv().is_err());
+
+    test.expect_reply("senryu off", "このチャンネルの川柳検出はオフです。")
+        .await;
+    let senryu_disabled = test.channel_message(verse, verse);
+    test.bot.handle_created(&senryu_disabled).await.unwrap();
+    test.expect_mogamigawa_reply_and_stamps(&senryu_disabled, &MOGAMIGAWA_STAMPS);
+
+    test.expect_reply("mogamigawa off", off).await;
+    test.expect_reply("mogamigawa status", off).await;
+    let channel = test.channel;
+    test.channel = Uuid::now_v7();
+    test.expect_reply("mogamigawa status", on).await;
+    test.channel = channel;
+    test.expect_reply("senryu status", "このチャンネルの川柳検出はオフです。")
+        .await;
+    test.expect_reply("senryu on", "このチャンネルの川柳検出はオンです。")
+        .await;
+    let disabled = test.channel_message(verse, verse);
+    test.bot.handle_created(&disabled).await.unwrap();
+    assert!(test.requests.try_recv().is_err());
+
+    test.expect_reply("mogamigawa on", on).await;
+    test.expect_reply("mogamigawa status", on).await;
+    test.bot.handle_updated(&disabled).await.unwrap();
+    assert!(test.requests.try_recv().is_err());
+    let reenabled = test.channel_message(verse, verse);
+    test.bot.handle_created(&reenabled).await.unwrap();
+    test.expect_mogamigawa_reply_and_stamps(&reenabled, &MOGAMIGAWA_STAMPS);
+
+    for message in [message, senryu_disabled, reenabled] {
+        sqlx::query("DELETE FROM mogamigawa_responses WHERE message_id = ?")
+            .bind(message.id.to_string())
+            .execute(&db)
+            .await
+            .unwrap();
+    }
+    sqlx::query("DELETE FROM channel_settings WHERE channel_id = ?")
+        .bind(test.channel.to_string())
+        .execute(&db)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated MariaDB database"]
+async fn mogamigawa_stops_at_a_failed_stamp_and_does_not_retry() {
+    let db = test_database().await;
+    let mut test =
+        TestBot::with_failing_stamp(SenryuStore::new(db.clone()), Some(MOGAMIGAWA_STAMPS[1])).await;
+    let verse = "古池や 蛙飛びこむ";
+    let message = test.channel_message(verse, verse);
+
+    let error = test.bot.handle_created(&message).await.unwrap_err();
+    assert!(error.to_string().contains("mogamigawa02_gami"));
+    test.expect_mogamigawa_reply_and_stamps(&message, &MOGAMIGAWA_STAMPS[..2]);
+    test.bot.handle_created(&message).await.unwrap();
+    assert!(test.requests.try_recv().is_err());
+
+    sqlx::query("DELETE FROM mogamigawa_responses WHERE message_id = ?")
+        .bind(message.id.to_string())
         .execute(&db)
         .await
         .unwrap();

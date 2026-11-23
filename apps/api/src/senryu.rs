@@ -1,7 +1,7 @@
 mod detect;
 mod store;
 
-pub(crate) use detect::detect_senryu;
+pub(crate) use detect::{detect_senryu, is_mogamigawa, split_into_phrases};
 pub use store::{Senryu, SenryuCursor, SenryuStore};
 
 pub(crate) fn tokenizer() -> anyhow::Result<lindera::Tokenizer> {

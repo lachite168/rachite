@@ -2,15 +2,15 @@ use lindera::Tokenizer;
 use regex::Regex;
 use std::sync::OnceLock;
 
-const IGNORE_CHARS: [char; 60] = [
+const IGNORE_CHARS: [char; 59] = [
     '「', '」', '『', '』', '（', '）', '〔', '〕', '［', '］', '[', ']', '{', '}', '｟', '｠',
     '〈', '〉', '《', '》', '<', '>', '【', '】', '〖', '〗', '〘', '〙', '〚', '〛', '。', '、',
-    '・', '゠', '＝', '！', '？', '!', ',', '.', '?', 'ー', 'ぁ', 'ぃ', 'ぅ', 'ぇ', 'ぉ', 'ゃ',
-    'ゅ', 'ょ', 'ゎ', 'ァ', 'ィ', 'ゥ', 'ェ', 'ォ', 'ャ', 'ュ', 'ョ', 'ヮ',
+    '・', '゠', '＝', '！', '？', '!', ',', '.', '?', 'ぁ', 'ぃ', 'ぅ', 'ぇ', 'ぉ', 'ゃ', 'ゅ',
+    'ょ', 'ゎ', 'ァ', 'ィ', 'ゥ', 'ェ', 'ォ', 'ャ', 'ュ', 'ョ', 'ヮ',
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Phrase {
+pub(crate) struct Phrase {
     text: String,
     mora: usize,
 }
@@ -58,7 +58,7 @@ fn sanitize_text(text: &str) -> String {
     result
 }
 
-pub fn detect_senryu(text: &str, tokenizer: &Tokenizer) -> Option<String> {
+pub(crate) fn split_into_phrases(text: &str, tokenizer: &Tokenizer) -> Option<Vec<Phrase>> {
     let text = &sanitize_text(text);
     let mut tokens = tokenizer.tokenize(text).ok()?;
     let mut phrases = vec![];
@@ -111,7 +111,20 @@ pub fn detect_senryu(text: &str, tokenizer: &Tokenizer) -> Option<String> {
     if !current_phrase.text.is_empty() {
         phrases.push(current_phrase);
     }
+    Some(phrases)
+}
 
+pub(crate) fn is_mogamigawa(phrases: &[Phrase]) -> bool {
+    let mut mora = 0;
+    let mut has_boundary = false;
+    for phrase in phrases {
+        mora += phrase.mora;
+        has_boundary |= mora == 5;
+    }
+    has_boundary && mora == 12
+}
+
+pub(crate) fn detect_senryu(phrases: &[Phrase]) -> Option<String> {
     /* 拍数を全通り試して5,7,5を検出する */
     for start in 0..phrases.len() {
         let target_mora = [5, 7, 5];
@@ -155,7 +168,12 @@ pub fn detect_senryu(text: &str, tokenizer: &Tokenizer) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{count_mora, is_mogamigawa, sanitize_text, split_into_phrases};
+    use lindera::Tokenizer;
+
+    fn detect_senryu(text: &str, tokenizer: &Tokenizer) -> Option<String> {
+        super::detect_senryu(&split_into_phrases(text, tokenizer)?)
+    }
 
     #[test]
     fn test_count_mora() {
@@ -163,8 +181,40 @@ mod tests {
         assert_eq!(count_mora("こんにちは"), 5);
         assert_eq!(count_mora("「こんぱいる」えらあ"), 8);
         assert_eq!(count_mora("とうきょう"), 4);
+        assert_eq!(count_mora("コーヒー"), 4);
         assert_eq!(count_mora("Rust!"), 4);
         assert_eq!(count_mora("！こ？れ、は。す!ご?い,."), 6);
+    }
+
+    #[test]
+    fn mogamigawa_requires_a_five_mora_boundary_and_consumes_the_whole_message() {
+        let tokenizer = super::super::tokenizer().unwrap();
+        for text in [
+            "古池や蛙飛びこむ",
+            "古池や\n蛙飛びこむ",
+            "「古池や、蛙飛びこむ。」 :frog: https://example.com",
+            "コーヒーは 朝に飲みます",
+        ] {
+            assert!(
+                is_mogamigawa(&split_into_phrases(text, &tokenizer).unwrap()),
+                "{text}"
+            );
+        }
+        for text in [
+            "古池や",
+            "古池や 蛙飛びこむ 水の音",
+            "昨日 古池や 蛙飛びこむ",
+            "朝ごはんを食べましたよ",
+        ] {
+            assert!(
+                !is_mogamigawa(&split_into_phrases(text, &tokenizer).unwrap()),
+                "{text}"
+            );
+        }
+        assert_eq!(
+            detect_senryu("コーヒーは 朝に飲みます ひとやすみ", &tokenizer).as_deref(),
+            Some("コーヒーは\n朝に飲みます\nひとやすみ")
+        );
     }
 
     #[test]

@@ -1,4 +1,5 @@
 mod commands;
+mod mogamigawa;
 mod stampbomb;
 
 use crate::{
@@ -135,10 +136,18 @@ impl Bot {
             return Ok(());
         }
 
-        if !self.store.is_enabled(message.channel_id).await? {
+        let text = message.verse_text();
+        let Some(phrases) = senryu::split_into_phrases(&text, &self.tokenizer) else {
+            return Ok(());
+        };
+        if senryu::is_mogamigawa(&phrases) {
+            if self.store.is_mogamigawa_enabled(message.channel_id).await? {
+                self.complete_mogamigawa(message).await?;
+            }
             return Ok(());
         }
-        if let Some(verse) = senryu::detect_senryu(&message.plain_text, &self.tokenizer)
+        if let Some(verse) = senryu::detect_senryu(&phrases)
+            && self.store.is_enabled(message.channel_id).await?
             && self
                 .store
                 .record(message.id, message.channel_id, &verse)
@@ -158,7 +167,8 @@ impl Bot {
     async fn handle_updated(&self, message: &Message) -> Result<()> {
         let verse = match commands::arguments(&self.mention, &message.plain_text) {
             Some(_) => None,
-            None => senryu::detect_senryu(&message.plain_text, &self.tokenizer),
+            None => senryu::split_into_phrases(&message.verse_text(), &self.tokenizer)
+                .and_then(|phrases| senryu::detect_senryu(&phrases)),
         };
         let allow_new = verse.is_some() && self.store.is_enabled(message.channel_id).await?;
         self.store

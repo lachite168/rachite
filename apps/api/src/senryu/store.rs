@@ -75,6 +75,47 @@ impl SenryuStore {
         Ok(())
     }
 
+    pub(crate) async fn is_mogamigawa_enabled(
+        &self,
+        channel_id: Uuid,
+    ) -> Result<bool, sqlx::Error> {
+        let enabled = sqlx::query_scalar(
+            "SELECT mogamigawa_enabled FROM channel_settings WHERE channel_id = ?",
+        )
+        .bind(channel_id.to_string())
+        .fetch_optional(&self.db)
+        .await?;
+        Ok(enabled.unwrap_or(true))
+    }
+
+    pub(crate) async fn set_mogamigawa_enabled(
+        &self,
+        channel_id: Uuid,
+        enabled: bool,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "INSERT INTO channel_settings (channel_id, senryu_enabled, mogamigawa_enabled, updated_at)
+             VALUES (?, TRUE, ?, UTC_TIMESTAMP(6))
+             ON DUPLICATE KEY UPDATE mogamigawa_enabled = VALUES(mogamigawa_enabled), updated_at = VALUES(updated_at)",
+        )
+        .bind(channel_id.to_string())
+        .bind(enabled)
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
+
+    pub(crate) async fn record_mogamigawa(&self, message_id: Uuid) -> Result<bool, sqlx::Error> {
+        let inserted = sqlx::query("INSERT INTO mogamigawa_responses (message_id) VALUES (?)")
+            .bind(message_id.to_string())
+            .execute(&self.db)
+            .await;
+        match inserted {
+            Err(sqlx::Error::Database(error)) if error.is_unique_violation() => Ok(false),
+            result => result.map(|_| true),
+        }
+    }
+
     /// Returns whether this event added a new entry, so duplicates don't send another reply.
     pub async fn record(
         &self,
