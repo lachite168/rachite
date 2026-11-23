@@ -12,7 +12,7 @@
 
 - `mise run dev` は Compose の MariaDB を起動し、ヘルスチェックが通ってから API と Web を起動します。以前は MariaDB が停止していると API が接続タイムアウトで終了し、Vite が `/api` を転送できませんでした。既に稼働している MariaDB を使う場合は、`.env` に `DATABASE_URL` を設定して `mise run dev --no-compose-db` を使います。[mise.toml](../mise.toml)
 - `stampbomb` は、指定されたリンクを `plainText` から読み取れないとき、traQ イベントの元の `text` から同じ引数位置のリンクを取得します。traQ は埋め込み表示する URL を `plainText` で `[引用メッセージ]` に置き換えます。通常の URL と traQ の引用形式を扱い、後続のリンクを対象に取り違えないことをテストしています。[stampbomb の実装](../apps/api/src/bot/commands/stampbomb.rs) · [traQ の本文変換](https://github.com/traPtitech/traQ/blob/master/utils/message/parser.go)
-- Bot の全コマンドを、模擬 traQ の HTTP API と組み合わせてテストします。`stampbomb` は対象メッセージとキュー投入内容、無効な入力、キュー満杯を確認します。`senryu status` / `off` / `on` の設定保存は専用 MariaDB で確認します。[コマンドのテスト](../apps/api/src/bot/commands/tests.rs)
+- Bot の全コマンドを、模擬 traQ の HTTP API と組み合わせてテストします。`stampbomb` は対象メッセージとキュー投入内容、無効な入力、キュー満杯を確認します。`senryu status` / `off` / `on` の設定保存は専用 MariaDB で確認します。[コマンドのテスト](../apps/api/tests/bot/commands.rs)
 
 ## Bot 接続の確認
 
@@ -34,6 +34,14 @@ Bot Console でテスト用 Bot が WebSocket Mode になっていることを�
 
 Rust は `bot.rs` + `bot/` のようにモジュール名と同じファイルを入口にします。機能の流れを追える構成を優先し、DB や traQ クライアントは必要な箇所から直接呼びます。Web の `pages/` は取得処理と画面構成、`components/` は表示部品を担当します。MUI の配色とアクセント `#0485F7` は [theme.ts](../apps/web/src/theme.ts) にあります。[HeroUI Default テーマ](https://heroui.com/en/themes) · [UXPin の UI デザインの基本原則](https://www.uxpin.com/studio/jp/blog-jp/ui-design-principles-ja/)
 
+## stampgacha の実装引き継ぎ
+
+入力形式は traQ-gazer の登録欄を参考にし、パターンと末尾フラグは利用者が TypeScript で使い慣れた ECMAScript の `RegExp` に合わせます。大小文字を既定で区別しない点は Bot の仕様です。 [スタンプガチャの仕様](specs.md#スタンプガチャ)
+
+- Rust が先頭の引数を読み、通常の部分一致と正規表現を振り分けます。正規表現では、traQ から取得したスタンプ一覧とパターン・フラグを1回の `tokio::task::spawn_blocking` に渡します。QuickJS のコンテキストはタスク内に閉じ、`RegExp` を一度コンパイルし、各名前の照合前に `lastIndex` を `0` にします。抽選と返信は Rust が担当します。 [コマンドの入口](../apps/api/src/bot/commands/stampgacha.rs)
+- `rquickjs` のビルドで QuickJS の C ソースをコンパイルします。Bot はブロッキングタスクの結果を待つため、スタンプ一覧の取得後、コンパイルと照合に 250 ms の期限を設けます。照合中は QuickJS の割り込みハンドラーで期限を確認します。模擬スタンプ名1万件を WSL のデバッグビルドで照合したところ、2種類の式を各5回実行して最長は約27 ms でした。実際の traQ の一覧は認証が必要で、計測には使っていません。 [照合処理](../apps/api/src/bot/commands/stampgacha/regexp.rs) · [割り込み API](https://docs.rs/rquickjs/latest/rquickjs/struct.Runtime.html#method.set_interrupt_handler)
+- テスト専用の Bot コマンドテストは `apps/api/tests/bot/` に置きます。模擬 traQ で ECMAScript の構文とフラグ、区切りのスラッシュ、入力エラー、実行中の時間切れと次のコマンドへの返信を確認します。 [コマンドのテスト](../apps/api/tests/bot/commands.rs)
+
 ## 川柳設定の最新仕様
 
 - `@BOT_lachite senryu status` / `on` / `off` は、チャンネルにコマンドを投稿できる人なら誰でも使えます。対象は投稿したチャンネルです。旧設定の `RACHITE_OPERATOR_IDS` は廃止済みです。
@@ -47,7 +55,7 @@ Rust は `bot.rs` + `bot/` のようにモジュール名と同じファイル�
 1. 投稿の前処理、Lindera による文節分け、拍数計算を共用します。長音符 `ー` は川柳と最上川の両方で1拍です。川柳は従来どおり途中の句を拾い、最上川は本文全体が文節の境界で 5・7 拍に分かれるかを判定します。イベントの `text` と `plainText` を使い、traQ がリンクを `[引用メッセージ]` に変換した場合は拍数から除きます。 [判定処理](../apps/api/src/senryu/detect.rs) · [イベントの本文](../apps/api/src/traq/event.rs)
 2. 人の新規投稿を処理する `handle_created` で、コマンド処理後に最上川を判定します。`mogamigawa status` / `on` / `off` は投稿したチャンネルの設定を表示・変更します。既存の設定行と設定未登録のチャンネルでも最上川の初期値はオンです。 [イベント処理](../apps/api/src/bot.rs) · [コマンド定義](../apps/api/src/bot/commands/mogamigawa.rs) · [マイグレーション](../apps/api/migrations/0002_mogamigawa.sql)
 3. 最上川は通知を送る前に句と検出日時を保存します。スタンプ3種が揃ったら、元投稿 ID の返信処理を一度だけ開始し、返信の後にスタンプを順番に押します。Web の `/mogamigawa` は `/api/mogamigawa` から新着20件ずつ取得します。本文と日時を持たない既存の処理記録も、元投稿リンクとして表示できます。 [最上川の送信処理](../apps/api/src/bot/mogamigawa.rs) · [マイグレーション](../apps/api/migrations/0003_mogamigawa_listing.sql)
-4. 判定テストでは、長音を含む 5・7 と 5・7・5、5拍目が文節境界にならない12拍の本文、URL付き本文を確認しました。模擬 traQ と専用 MariaDB では、初期オン、設定の独立、重複イベント、スタンプの送信先・順序・個数、途中失敗を確認しました。既存の川柳設定を保持したまま移行できることも確認済みです。実際の traQ では、同じスタンプが先に押されていても追加されることと、画面での表示順を確認します。 [判定テスト](../apps/api/src/senryu/detect.rs) · [模擬 API のテスト](../apps/api/src/bot/commands/tests.rs)
+4. 判定テストでは、長音を含む 5・7 と 5・7・5、5拍目が文節境界にならない12拍の本文、URL付き本文を確認しました。模擬 traQ と専用 MariaDB では、初期オン、設定の独立、重複イベント、スタンプの送信先・順序・個数、途中失敗を確認しました。既存の川柳設定を保持したまま移行できることも確認済みです。実際の traQ では、同じスタンプが先に押されていても追加されることと、画面での表示順を確認します。 [判定テスト](../apps/api/src/senryu/detect.rs) · [模擬 API のテスト](../apps/api/tests/bot/commands.rs)
 
 ## 検証済みの範囲
 

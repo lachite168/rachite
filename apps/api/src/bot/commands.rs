@@ -11,6 +11,7 @@ mod senryu;
 mod stampbomb;
 mod stampgacha;
 #[cfg(test)]
+#[path = "../../tests/bot/commands.rs"]
 mod tests;
 
 use super::Bot;
@@ -40,6 +41,7 @@ const COMMANDS: &[Command] = &[
     lachitegacha::HELP,
     n3gacha::HELP,
     stampgacha::HELP,
+    stampgacha::REGEX_HELP,
     stampbomb::HELP,
     senryu::STATUS,
     senryu::ON,

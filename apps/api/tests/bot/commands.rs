@@ -12,6 +12,7 @@ use axum::{
 };
 use serde_json::{Value, json};
 use sqlx::{MySqlPool, mysql::MySqlPoolOptions};
+use std::time::Duration;
 use tokio::{
     net::TcpListener,
     sync::{OnceCell, mpsc},
@@ -67,6 +68,9 @@ impl TestBot {
                         {"name": "old_n3", "id": Uuid::from_u128(6)},
                         {"name": "big_STAR", "id": Uuid::from_u128(7)},
                         {"name": "W", "id": STAMP_ID},
+                        {"name": "foo/bar", "id": Uuid::from_u128(11)},
+                        {"name": "prefix/foo", "id": Uuid::from_u128(12)},
+                        {"name": format!("{}b", "a".repeat(28)), "id": Uuid::from_u128(13)},
                         {"name": "mogamigawa03_gawa", "id": MOGAMIGAWA_STAMPS[2]},
                         {"name": "mogamigawa01_mo", "id": MOGAMIGAWA_STAMPS[0]},
                         {"name": "mogamigawa02_gami", "id": MOGAMIGAWA_STAMPS[1]}
@@ -230,7 +234,11 @@ async fn gacha_commands_match_and_report_missing_stamps() {
     for (command, reply) in [
         ("lachitegacha", ":Lachite_smile.ex-large:"),
         ("n3gacha", ":N3_fox.ex-large:"),
-        ("stampgacha sTaR", ":big_STAR.ex-large:"),
+        ("stampgacha sTaR ignored", ":big_STAR.ex-large:"),
+        (
+            "stampgacha ^big_",
+            "^big_ を含むスタンプが見つかりませんでした",
+        ),
         (
             "stampgacha absent",
             "absent を含むスタンプが見つかりませんでした",
@@ -239,6 +247,56 @@ async fn gacha_commands_match_and_report_missing_stamps() {
     ] {
         test.expect_reply(command, reply).await;
     }
+}
+
+#[tokio::test]
+async fn stampgacha_supports_ecmascript_regexp_literals() {
+    let mut test = TestBot::new().await;
+    for (command, reply) in [
+        ("stampgacha /^BIG_[a-z]+$/ memo", ":big_STAR.ex-large:"),
+        ("stampgacha /^n3_fox$/i", ":N3_fox.ex-large:"),
+        ("stampgacha /^n3_fox$/u", ":N3_fox.ex-large:"),
+        ("stampgacha /^n3_[a-z]+(?=x$)x$/v", ":N3_fox.ex-large:"),
+        (r"stampgacha /^n3(\x5f)fox$/", ":N3_fox.ex-large:"),
+        (r"stampgacha /^foo\/bar$/", ":foo/bar.ex-large:"),
+        ("stampgacha /^foo[/]bar$/", ":foo/bar.ex-large:"),
+        ("stampgacha /foo", ":prefix/foo.ex-large:"),
+        ("stampgacha /foo bar/", ":prefix/foo.ex-large:"),
+        ("stampgacha /(?-i:^big_STAR$)/", ":big_STAR.ex-large:"),
+        (
+            "stampgacha /(?-i:^BIG_)/",
+            "正規表現に一致するスタンプが見つかりませんでした",
+        ),
+        (
+            "stampgacha /^absent$/",
+            "正規表現に一致するスタンプが見つかりませんでした",
+        ),
+    ] {
+        test.expect_reply(command, reply).await;
+    }
+    for search in ["//", "/[/", "/foo/bar", "/foo/ii", "/foo/uv"] {
+        test.expect_reply(
+            &format!("stampgacha {search}"),
+            "無効な正規表現です。パターンとフラグを確認してください",
+        )
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn stampgacha_reports_regexp_timeout_and_handles_the_next_command() {
+    let mut test = TestBot::new().await;
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        test.expect_reply(
+            "stampgacha /^(a+)+$/",
+            "正規表現の照合が時間切れになりました",
+        ),
+    )
+    .await
+    .expect("QuickJS should interrupt matching");
+    test.expect_reply("stampgacha /^n3_fox$/", ":N3_fox.ex-large:")
+        .await;
 }
 
 #[tokio::test]
@@ -322,6 +380,83 @@ async fn senryu_commands_persist_settings_per_channel() {
     test.expect_reply("senryu status", on).await;
     sqlx::query("DELETE FROM channel_settings WHERE channel_id = ?")
         .bind(original_channel.to_string())
+        .execute(&db)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated MariaDB database"]
+async fn senryu_events_notify_once_and_keep_published_entries_in_sync() {
+    let db = test_database().await;
+    let mut test = TestBot::with_store(SenryuStore::new(db.clone())).await;
+    let channel = test.channel;
+    let message_id = Uuid::now_v7();
+    let original = "古池や 蛙飛びこむ 水の音";
+    let edited = "柿くへば 鐘が鳴るなり 法隆寺";
+    let message_event = |kind: &str, is_bot: bool, text: &str| {
+        serde_json::from_value(json!({
+            "type": kind,
+            "body": {"message": {
+                "id": message_id,
+                "channelId": channel,
+                "user": {"name": "alice", "bot": is_bot},
+                "text": text,
+                "plainText": text,
+                "createdAt": "2026-11-23T01:02:03Z"
+            }}
+        }))
+        .unwrap()
+    };
+    let stored_verse = || {
+        sqlx::query_scalar::<_, String>("SELECT verse FROM senryu WHERE message_id = ?")
+            .bind(message_id.to_string())
+            .fetch_optional(&db)
+    };
+
+    test.bot
+        .handle_event(message_event("MESSAGE_CREATED", true, original))
+        .await;
+    assert!(test.requests.try_recv().is_err());
+    assert_eq!(stored_verse().await.unwrap(), None);
+
+    test.bot
+        .handle_event(message_event("MESSAGE_CREATED", false, original))
+        .await;
+    let link = test.bot.client.message_link(message_id);
+    assert_eq!(
+        test.reply(),
+        format!("川柳を検出しました！\n```\n古池や\n蛙飛びこむ\n水の音\n```\n{link}")
+    );
+    test.bot
+        .handle_event(message_event("MESSAGE_CREATED", false, original))
+        .await;
+    assert!(test.requests.try_recv().is_err());
+
+    test.expect_reply("senryu off", "このチャンネルの川柳検出はオフです。")
+        .await;
+    test.bot
+        .handle_event(message_event("MESSAGE_UPDATED", false, edited))
+        .await;
+    assert_eq!(
+        stored_verse().await.unwrap().as_deref(),
+        Some("柿くへば\n鐘が鳴るなり\n法隆寺")
+    );
+    assert!(test.requests.try_recv().is_err());
+
+    test.bot
+        .handle_event(
+            serde_json::from_value(json!({
+                "type": "MESSAGE_DELETED",
+                "body": {"message": {"id": message_id}}
+            }))
+            .unwrap(),
+        )
+        .await;
+    assert_eq!(stored_verse().await.unwrap(), None);
+    assert!(test.requests.try_recv().is_err());
+    sqlx::query("DELETE FROM channel_settings WHERE channel_id = ?")
+        .bind(channel.to_string())
         .execute(&db)
         .await
         .unwrap();
