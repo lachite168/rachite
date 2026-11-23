@@ -1,16 +1,35 @@
 services:
+  db:
+    image: mariadb:11.8
+    environment:
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-rachite}
+      MARIADB_USER: ${MARIADB_USER:-rachite}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-rachite-local}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-rachite-root-local}
+    ports:
+      - '127.0.0.1:3306:3306'
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
   api:
     build:
       context: .
       target: api
     environment:
-      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
-      RUST_LOG: ${RUST_LOG:-starter_api=info,tower_http=info}
-    ports:
-      - '127.0.0.1:3000:3000'
-    volumes:
-      - sqlite-data:/data
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-mysql://${MARIADB_USER:-rachite}:${MARIADB_PASSWORD:-rachite-local}@db:3306/${MARIADB_DATABASE:-rachite}}
+      RUST_LOG: ${RUST_LOG:-rachite_api=info,tower_http=info}
+      TRAQ_ORIGIN: ${TRAQ_ORIGIN:-https://q.trap.jp}
+      TRAQ_BOT_NAME: ${TRAQ_BOT_NAME:-BOT_lachite}
+      TRAQ_BOT_ID: ${TRAQ_BOT_ID:-}
+      TRAQ_BOT_TOKEN: ${TRAQ_BOT_TOKEN:-}
+    depends_on:
+      db:
+        condition: service_healthy
     healthcheck:
       test:
         [
@@ -35,5 +54,6 @@ services:
       api:
         condition: service_healthy
     restart: unless-stopped
+
 volumes:
-  sqlite-data:
+  mariadb-data:

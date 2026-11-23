@@ -18,8 +18,9 @@ description = "Install Web dependencies"
 run = "npm ci"
 
 [tasks.dev]
-description = "Start the API and Web dev servers"
-run = "npm run dev"
+description = "Start MariaDB and the API and Web dev servers"
+usage = 'flag "--no-compose-db" help="Use an already-running MariaDB"'
+run = "{% if not usage.no_compose_db %}docker compose up -d --wait db && {% endif %}npm run dev"
 
 [tasks.lint]
 description = "Check Web and API code"
@@ -30,7 +31,7 @@ description = "Format Web and API code"
 run = "npm run format"
 
 [tasks.test]
-description = "Run API integration tests"
+description = "Run API and Bot tests"
 run = "npm test"
 
 [tasks.check]

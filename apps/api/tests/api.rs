@@ -1,160 +1,143 @@
 use axum_test::TestServer;
+use rachite_api::{AppState, app, bot::BotStatus, senryu::SenryuStore};
 use serde_json::{Value, json};
-use sqlx::sqlite::SqlitePoolOptions;
-use starter_api::{ApiDoc, AppState, app};
-use utoipa::OpenApi;
+use sqlx::mysql::MySqlPoolOptions;
+use tokio::sync::watch;
+use uuid::Uuid;
 
-async fn server() -> TestServer {
-    let db = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .unwrap();
-    sqlx::migrate!().run(&db).await.unwrap();
-    let state = AppState {
-        db,
-        jwt_secret: "test-only-secret-with-at-least-32-bytes".into(),
-        http: reqwest::Client::new(),
-    };
-    TestServer::new(app(state, "http://localhost:5173").unwrap())
+fn make_server(store: SenryuStore) -> TestServer {
+    let (_, bot_status) = watch::channel(BotStatus::Disabled);
+    TestServer::new(app(AppState::new(
+        store,
+        "https://q.trap.jp".parse().unwrap(),
+        "@BOT_lachite".into(),
+        bot_status,
+    )))
 }
-async fn register(server: &TestServer, email: &str) -> String {
-    let response = server
-        .post("/api/auth/register")
-        .json(&json!({"email":email,"password":"a-long-test-password"}))
-        .await;
-    response.assert_status(axum::http::StatusCode::CREATED);
-    response.json::<Value>()["token"]
-        .as_str()
-        .unwrap()
-        .to_owned()
-}
+
 #[tokio::test]
-async fn health_and_openapi() {
-    let server = server().await;
+async fn command_catalog_bot_status_and_invalid_cursor() {
+    let db = MySqlPoolOptions::new()
+        .connect_lazy("mysql://rachite:unused@127.0.0.1/rachite_test")
+        .unwrap();
+    let server = make_server(SenryuStore::new(db));
+
+    let response = server.get("/api/commands").await;
+    response.assert_status_ok();
+    let catalog: Value = response.json();
+    assert_eq!(catalog["mention"], "@BOT_lachite");
+    assert!(
+        catalog["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|command| command["usage"] == "stampbomb <stamp> <number> <message-link>")
+    );
+
     server
-        .get("/api/health")
+        .get("/api/bot/status")
         .await
-        .assert_json(&json!({"status":"ok"}));
-    let doc = ApiDoc::openapi();
-    assert_eq!(doc.paths.paths.len(), 6);
+        .assert_json(&json!({"status": "disabled"}));
+
+    server
+        .get("/api/senryu?before=invalid")
+        .await
+        .assert_status_bad_request();
+
     let response = server.get("/api/openapi.json").await;
     response.assert_status_ok();
-    assert!(response.json::<Value>()["components"]["securitySchemes"]["bearer"].is_object());
+    let document: Value = response.json();
+    assert!(document["paths"]["/api/senryu"]["get"].is_object());
 }
+
 #[tokio::test]
-async fn authentication_validation_and_expired_token() {
-    let server = server().await;
-    server.get("/api/items").await.assert_status_unauthorized();
-    server
-        .post("/api/auth/register")
-        .json(&json!({"email":"bad","password":"short"}))
+#[ignore = "requires TEST_DATABASE_URL for a dedicated MariaDB database"]
+async fn senryu_lifecycle_and_pagination() {
+    let url = std::env::var("TEST_DATABASE_URL").expect("Set TEST_DATABASE_URL to a test database");
+    let db = MySqlPoolOptions::new().connect(&url).await.unwrap();
+    sqlx::migrate!().run(&db).await.unwrap();
+    let store = SenryuStore::new(db);
+    let server = make_server(store.clone());
+    server.get("/api/health").await.assert_status_ok();
+
+    let channel = Uuid::now_v7();
+    let original = Uuid::now_v7();
+    let discovered_in_edit = Uuid::now_v7();
+    let disabled_new = Uuid::now_v7();
+
+    assert!(store.is_enabled(channel).await.unwrap());
+    assert!(store.record(original, channel, "初稿").await.unwrap());
+    assert!(!store.record(original, channel, "重複").await.unwrap());
+    store
+        .revise(discovered_in_edit, channel, Some("編集で検出"), true)
         .await
-        .assert_status_bad_request();
-    let token = register(&server, "user@example.com").await;
-    server
-        .get("/api/auth/me")
-        .add_header("authorization", format!("Bearer {token}"))
+        .unwrap();
+    store.set_enabled(channel, false).await.unwrap();
+    assert!(!store.is_enabled(channel).await.unwrap());
+    store
+        .revise(disabled_new, channel, Some("登録しない"), false)
         .await
-        .assert_status_ok();
-    server
-        .post("/api/auth/register")
-        .json(&json!({"email":"USER@example.com","password":"a-long-test-password"}))
+        .unwrap();
+    store
+        .revise(original, channel, Some("改稿"), false)
         .await
-        .assert_status_conflict();
-    server
-        .post("/api/auth/login")
-        .json(&json!({"email":"user@example.com","password":"wrong-password"}))
-        .await
-        .assert_status_unauthorized();
-    server
-        .post("/api/auth/login")
-        .json(&json!({"email":"USER@example.com","password":"a-long-test-password"}))
-        .await
-        .assert_status_ok();
-    let expired = jsonwebtoken::encode(
-        &jsonwebtoken::Header::default(),
-        &json!({"sub":"x","exp":1,"iss":"starter-api"}),
-        &jsonwebtoken::EncodingKey::from_secret(b"test-only-secret-with-at-least-32-bytes")
-            .unwrap(),
-    )
-    .unwrap();
-    server
-        .get("/api/items")
-        .add_header("authorization", format!("Bearer {expired}"))
-        .await
-        .assert_status_unauthorized();
-}
-#[tokio::test]
-async fn crud_is_scoped_to_the_authenticated_owner() {
-    let server = server().await;
-    let alice = format!("Bearer {}", register(&server, "alice@example.com").await);
-    let bob = format!("Bearer {}", register(&server, "bob@example.com").await);
-    server
-        .post("/api/items")
-        .add_header("authorization", &alice)
-        .json(&json!({"title":"   "}))
-        .await
-        .assert_status_bad_request();
-    let response = server
-        .post("/api/items")
-        .add_header("authorization", &alice)
-        .json(&json!({"title":" First item ","description":"Hello"}))
-        .await;
-    response.assert_status(axum::http::StatusCode::CREATED);
-    let item = response.json::<Value>();
-    assert_eq!(item["title"], "First item");
-    let path = format!("/api/items/{}", item["id"].as_str().unwrap());
-    server
-        .get(&path)
-        .add_header("authorization", &alice)
-        .await
-        .assert_status_ok();
-    server
-        .get(&path)
-        .add_header("authorization", &bob)
-        .await
-        .assert_status_not_found();
-    server
-        .put(&path)
-        .add_header("authorization", &bob)
-        .json(&json!({"title":"stolen"}))
-        .await
-        .assert_status_not_found();
-    server
-        .delete(&path)
-        .add_header("authorization", &bob)
-        .await
-        .assert_status_not_found();
-    server
-        .get("/api/items")
-        .add_header("authorization", &bob)
-        .await
-        .assert_json(&json!([]));
-    let response = server
-        .put(&path)
-        .add_header("authorization", &alice)
-        .json(&json!({"title":"Updated","completed":true}))
-        .await;
-    response.assert_status_ok();
-    assert_eq!(response.json::<Value>()["completed"], true);
+        .unwrap();
+
+    let first = server.get("/api/senryu").await.json::<Value>();
+    let entries = first["items"].as_array().unwrap();
+    let original_entry = entries
+        .iter()
+        .find(|row| row["message_id"] == original.to_string())
+        .unwrap();
+    assert_eq!(original_entry["verse"], "改稿");
     assert_eq!(
-        server
-            .get("/api/items")
-            .add_header("authorization", &alice)
-            .await
-            .json::<Vec<Value>>()
-            .len(),
-        1
+        original_entry["source_url"],
+        format!("https://q.trap.jp/messages/{original}")
     );
-    server
-        .delete(&path)
-        .add_header("authorization", &alice)
+    assert!(
+        !entries
+            .iter()
+            .any(|row| row["message_id"] == disabled_new.to_string())
+    );
+    assert!(
+        entries
+            .iter()
+            .any(|row| row["message_id"] == discovered_in_edit.to_string())
+    );
+
+    let mut newest = Vec::new();
+    for _ in 0..20 {
+        let id = Uuid::now_v7();
+        store.record(id, channel, "ページ分割").await.unwrap();
+        newest.push(id);
+    }
+    let first = server.get("/api/senryu").await.json::<Value>();
+    assert_eq!(first["items"].as_array().unwrap().len(), 20);
+    let cursor = first["next_cursor"].as_str().unwrap();
+    let boundary = first["items"][19]["message_id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    store.remove(boundary).await.unwrap();
+    let second = server
+        .get(&format!("/api/senryu?before={cursor}"))
         .await
-        .assert_status(axum::http::StatusCode::NO_CONTENT);
-    server
-        .get(&path)
-        .add_header("authorization", &alice)
-        .await
-        .assert_status_not_found();
+        .json::<Value>();
+    assert_eq!(
+        second["items"][0]["message_id"],
+        discovered_in_edit.to_string()
+    );
+
+    store.revise(original, channel, None, false).await.unwrap();
+    store.remove(discovered_in_edit).await.unwrap();
+    let list = store.list(None, 100).await.unwrap();
+    assert!(
+        !list.iter().any(|row| row.message_id == original.to_string()
+            || row.message_id == discovered_in_edit.to_string())
+    );
+
+    for id in newest {
+        store.remove(id).await.unwrap();
+    }
 }
