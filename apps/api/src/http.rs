@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tower_http::trace::TraceLayer;
 use utoipa::{IntoParams, OpenApi, ToSchema};
-use utoipa_swagger_ui::SwaggerUi;
+use utoipa_swagger_ui::{Config as SwaggerConfig, SwaggerUi};
 
 const PAGE_SIZE: u32 = 20;
 
@@ -136,11 +136,15 @@ struct ApiDoc;
 
 pub fn app(state: AppState) -> Router {
     Router::new()
-        .route("/api/health", get(health))
-        .route("/api/bot/status", get(bot_status))
-        .route("/api/commands", get(commands))
-        .route("/api/senryu", get(list_senryu))
-        .merge(SwaggerUi::new("/swagger-ui").url("/api/openapi.json", ApiDoc::openapi()))
+        .route("/health", get(health))
+        .route("/bot/status", get(bot_status))
+        .route("/commands", get(commands))
+        .route("/senryu", get(list_senryu))
+        .merge(
+            SwaggerUi::new("/swagger-ui")
+                .url("/openapi.json", ApiDoc::openapi())
+                .config(SwaggerConfig::new(["/api/openapi.json"])),
+        )
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

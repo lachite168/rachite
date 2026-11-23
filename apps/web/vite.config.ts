@@ -8,7 +8,11 @@ import { getApiProxyTarget } from './dev.config.ts'
 export default defineConfig(({ mode }) => {
   const target = getApiProxyTarget(mode)
   const proxy = {
-    '/api': { target, changeOrigin: true },
+    '^/api(?=/|\\?|$)': {
+      target,
+      changeOrigin: true,
+      rewrite: (path: string) => path.replace(/^\/api\/?/, '/')
+    },
     '/swagger-ui': { target, changeOrigin: true }
   }
 

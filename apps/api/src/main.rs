@@ -19,7 +19,7 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::load()?;
     let db = MySqlPoolOptions::new()
         .max_connections(5)
-        .connect(&config.database_url)
+        .connect_with(config.database)
         .await
         .context("Could not connect to MariaDB")?;
     sqlx::migrate!().run(&db).await?;

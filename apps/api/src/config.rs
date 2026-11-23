@@ -1,10 +1,11 @@
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use reqwest::Url;
+use sqlx::mysql::MySqlConnectOptions;
 use std::env;
 use uuid::Uuid;
 
 pub struct Config {
-    pub database_url: String,
+    pub database: MySqlConnectOptions,
     pub host: String,
     pub port: u16,
     pub traq_origin: Url,
@@ -55,7 +56,7 @@ impl Config {
         };
 
         Ok(Self {
-            database_url: env::var("DATABASE_URL").context("DATABASE_URL is required")?,
+            database: database_options()?,
             host: env::var("HOST").unwrap_or_else(|_| "127.0.0.1".into()),
             port: env::var("PORT")
                 .unwrap_or_else(|_| "3000".into())
@@ -66,4 +67,35 @@ impl Config {
             bot,
         })
     }
+}
+
+fn database_options() -> Result<MySqlConnectOptions> {
+    match env::var("RACHITE_DATABASE") {
+        Ok(mode) if mode == "neoshowcase" => neoshowcase_mariadb(),
+        Ok(_) => bail!("RACHITE_DATABASE must be neoshowcase when set"),
+        Err(env::VarError::NotPresent) => env::var("DATABASE_URL")
+            .context("DATABASE_URL is required")?
+            .parse()
+            .context("Invalid DATABASE_URL"),
+        Err(error) => Err(error).context("Invalid RACHITE_DATABASE"),
+    }
+}
+
+fn neoshowcase_mariadb() -> Result<MySqlConnectOptions> {
+    fn required(name: &str) -> Result<String> {
+        let value =
+            env::var(name).with_context(|| format!("NeoShowcase MariaDB requires {name}"))?;
+        ensure!(!value.is_empty(), "NeoShowcase MariaDB requires {name}");
+        Ok(value)
+    }
+
+    let port = required("NS_MARIADB_PORT")?
+        .parse()
+        .context("Invalid NS_MARIADB_PORT")?;
+    Ok(MySqlConnectOptions::new()
+        .host(&required("NS_MARIADB_HOSTNAME")?)
+        .port(port)
+        .username(&required("NS_MARIADB_USER")?)
+        .password(&required("NS_MARIADB_PASSWORD")?)
+        .database(&required("NS_MARIADB_DATABASE")?))
 }

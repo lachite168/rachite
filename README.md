@@ -33,8 +33,6 @@ Compose で全体を起動する場合は `mise run up` を実行します。川
 
 `/api/health` は DB への接続、`/api/bot/status` は Bot の状態（`disabled`、`disconnected`、`connected`）を返します。`/swagger-ui/` から API を確認できます。
 
-## 部内公開
+## NeoShowcase で部内公開
 
-本番で公開する前に、Web 画面と `/api` を同じホストの Hard 認証の配下に置き、Axum のポートを認証プロキシ外に公開しないでください。別のルートで `/swagger-ui` も公開する場合は、そのルートにも同じ認証を適用します。認証前のアクセスで画面と API の両方が保護されていることを確認してください。ローカルの Vite と Compose はループバックで開発するための設定です。
-
-Bot 用バックエンドは1インスタンスで常時稼働させます。イベント購読と旧 Bot からの切り替え手順は [docs/handout.md](docs/handout.md) を参照してください。
+Web を Static、API と traQ Bot を Runtime として同じドメインに配置し、NeoShowcase の MariaDB を使います。登録画面に入力する値と Bot の切り替えは [NeoShowcase へのデプロイ](docs/NEOSHOWCASE.md) を参照してください。

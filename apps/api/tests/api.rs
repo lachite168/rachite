@@ -22,7 +22,7 @@ async fn command_catalog_bot_status_and_invalid_cursor() {
         .unwrap();
     let server = make_server(SenryuStore::new(db));
 
-    let response = server.get("/api/commands").await;
+    let response = server.get("/commands").await;
     response.assert_status_ok();
     let catalog: Value = response.json();
     assert_eq!(catalog["mention"], "@BOT_lachite");
@@ -35,19 +35,23 @@ async fn command_catalog_bot_status_and_invalid_cursor() {
     );
 
     server
-        .get("/api/bot/status")
+        .get("/bot/status")
         .await
         .assert_json(&json!({"status": "disabled"}));
 
     server
-        .get("/api/senryu?before=invalid")
+        .get("/senryu?before=invalid")
         .await
         .assert_status_bad_request();
 
-    let response = server.get("/api/openapi.json").await;
+    let response = server.get("/openapi.json").await;
     response.assert_status_ok();
     let document: Value = response.json();
     assert!(document["paths"]["/api/senryu"]["get"].is_object());
+
+    let response = server.get("/swagger-ui/swagger-initializer.js").await;
+    response.assert_status_ok();
+    assert!(response.text().contains("/api/openapi.json"));
 }
 
 #[tokio::test]
@@ -58,7 +62,7 @@ async fn senryu_lifecycle_and_pagination() {
     sqlx::migrate!().run(&db).await.unwrap();
     let store = SenryuStore::new(db);
     let server = make_server(store.clone());
-    server.get("/api/health").await.assert_status_ok();
+    server.get("/health").await.assert_status_ok();
 
     let channel = Uuid::now_v7();
     let original = Uuid::now_v7();
@@ -83,7 +87,7 @@ async fn senryu_lifecycle_and_pagination() {
         .await
         .unwrap();
 
-    let first = server.get("/api/senryu").await.json::<Value>();
+    let first = server.get("/senryu").await.json::<Value>();
     let entries = first["items"].as_array().unwrap();
     let original_entry = entries
         .iter()
@@ -111,7 +115,7 @@ async fn senryu_lifecycle_and_pagination() {
         store.record(id, channel, "ページ分割").await.unwrap();
         newest.push(id);
     }
-    let first = server.get("/api/senryu").await.json::<Value>();
+    let first = server.get("/senryu").await.json::<Value>();
     assert_eq!(first["items"].as_array().unwrap().len(), 20);
     let cursor = first["next_cursor"].as_str().unwrap();
     let boundary = first["items"][19]["message_id"]
@@ -121,7 +125,7 @@ async fn senryu_lifecycle_and_pagination() {
         .unwrap();
     store.remove(boundary).await.unwrap();
     let second = server
-        .get(&format!("/api/senryu?before={cursor}"))
+        .get(&format!("/senryu?before={cursor}"))
         .await
         .json::<Value>();
     assert_eq!(
