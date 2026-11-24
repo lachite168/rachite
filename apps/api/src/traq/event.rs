@@ -1,6 +1,5 @@
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use std::borrow::Cow;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -37,21 +36,6 @@ pub(crate) struct Message {
     pub text: String,
     pub plain_text: String,
     pub created_at: DateTime<Utc>,
-}
-
-impl Message {
-    pub(crate) fn verse_text(&self) -> Cow<'_, str> {
-        const CITATION: &str = "[引用メッセージ]";
-        // traQ substitutes message links in plainText. Preserve literal text from the author.
-        if self.plain_text.contains(CITATION)
-            && !self.text.is_empty()
-            && !self.text.contains(CITATION)
-        {
-            Cow::Owned(self.plain_text.replace(CITATION, " "))
-        } else {
-            Cow::Borrowed(&self.plain_text)
-        }
-    }
 }
 
 #[derive(Deserialize)]

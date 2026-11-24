@@ -59,10 +59,12 @@ Rust は `bot.rs` + `bot/` のようにモジュール名と同じファイル�
 
 ## SudachiDict への移行
 
-1. イベントの `text` を使い、`pulldown-cmark` のイベントから本文を抽出します。traQ 固有の埋め込み、スタンプ、メンション、ネタバレを補足処理します。`plainText` は traQ が埋め込みの一部を置換した結果なので、判定には元の `text` を使います。 [traQ のイベント生成](https://github.com/traPtitech/traQ/blob/master/service/bot/event/payload/ev_message_created.go) · [本文の変換処理](https://github.com/traPtitech/traQ/blob/master/utils/message/parser.go)
-2. Lindera の同梱 SudachiDict に直接切り替えます。辞書との接続層が表記、読み、文節判定に必要な品詞を取り出します。読み不明の語は川柳の探索を区切り、最上川の判定を見送る根拠にします。 [Lindera の辞書形式](https://lindera.github.io/lindera/lindera-sudachidict/dictionary_format.html)
+1. `markdown.rs` は `pulldown-cmark` のイベントから本文を抽出し、traQ 固有の埋め込み、スタンプ、メンション、ネタバレを補足処理します。`plainText` は traQ が埋め込みの一部を置換した結果なので、判定には元の `text` を使います。 [実装](../apps/api/src/senryu/markdown.rs) · [traQ の本文変換](https://github.com/traPtitech/traQ/blob/master/utils/message/parser.go)
+2. `dictionary.rs` は Lindera の同梱 SudachiDict から読みと品詞を項目名で取得します。英字は小文字で辞書を引き、掲載には元の綴りを使います。`detect.rs` は読み不明の語で川柳の探索を区切り、最上川の判定を見送ります。 [辞書との接続](../apps/api/src/senryu/dictionary.rs) · [文節と拍数の判定](../apps/api/src/senryu/detect.rs) · [Lindera の辞書形式](https://lindera.github.io/lindera/lindera-sudachidict/dictionary_format.html)
 3. 既存の掲載結果は移行時に再計算しません。編集時に新しい解析を使って一覧だけ更新し、削除時は従来どおり取り下げます。解析エラーと解析が成功した結果の未検出を区別します。 [イベント処理](../apps/api/src/bot.rs)
 4. テストでは本文抽出と句の判定をそれぞれ確認します。同じ句を通常文・リスト・引用・リンクで書いた場合、装飾しかない投稿、読み不明の語の前後に句がある場合を含めます。模擬 traQ では両方の本文フィールドが異なるイベントを使います。 [検出仕様](specs.md#川柳と最上川の本文抽出拍数)
+5. 同梱辞書は「月は東に日は西に」を一語として解析します。「菜の花や月は東に日は西に」は中七の末尾に文節境界が取れず、句ごとに空白を入れた「菜の花や 月は東に 日は西に」は検出できます。 [判定テスト](../apps/api/src/senryu/detect.rs)
+6. 一時 MariaDB 11.8 と模擬 traQ で `cargo test --workspace --locked -- --include-ignored` の30件を確認しました。実際の traQ では、番号付きリスト、引用文、添付を含む新規投稿と編集イベントをテスト Bot で確認します。 [イベントのテスト](../apps/api/tests/bot/commands.rs)
 
 ## 検証済みの範囲
 
