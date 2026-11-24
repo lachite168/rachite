@@ -4,7 +4,7 @@ mod stampbomb;
 
 use crate::{
     config::BotConfig,
-    senryu::{self, SenryuStore},
+    senryu::{self, SenryuStore, VerseDictionary},
     traq::{Event, Message, TraqClient},
 };
 use anyhow::{Context, Result};
@@ -39,13 +39,13 @@ pub fn start(
     status: watch::Sender<BotStatus>,
 ) -> Result<JoinHandle<()>> {
     let client = TraqClient::new(origin, &config.token, config.id)?;
-    let tokenizer = senryu::tokenizer().context("Could not load the IPADIC dictionary")?;
+    let dictionary = VerseDictionary::sudachidict().context("Could not load SudachiDict")?;
     let (stamp_jobs, queue) = mpsc::channel(STAMP_QUEUE_CAPACITY);
     let bot = Bot {
         client,
         mention,
         store,
-        tokenizer,
+        dictionary,
         stamp_jobs,
     };
 
@@ -59,7 +59,7 @@ struct Bot {
     client: TraqClient,
     mention: String,
     store: SenryuStore,
-    tokenizer: lindera::Tokenizer,
+    dictionary: VerseDictionary,
     stamp_jobs: mpsc::Sender<stampbomb::Job>,
 }
 
@@ -134,11 +134,9 @@ impl Bot {
             return Ok(());
         }
 
-        let text = message.verse_text();
-        let Some(phrases) = senryu::split_into_phrases(&text, &self.tokenizer) else {
-            return Ok(());
-        };
-        if let Some(verse) = senryu::detect_mogamigawa(&phrases) {
+        let verses = senryu::detect(&message.text, &self.dictionary)
+            .with_context(|| format!("Could not analyze message {}", message.id))?;
+        if let Some(verse) = verses.mogamigawa {
             if self.store.is_mogamigawa_enabled(message.channel_id).await? {
                 self.store
                     .record_mogamigawa(message.id, message.channel_id, &verse)
@@ -147,7 +145,7 @@ impl Bot {
             }
             return Ok(());
         }
-        if let Some(verse) = senryu::detect_senryu(&phrases)
+        if let Some(verse) = verses.senryu
             && self.store.is_enabled(message.channel_id).await?
             && self
                 .store
@@ -166,18 +164,23 @@ impl Bot {
     }
 
     async fn handle_updated(&self, message: &Message) -> Result<()> {
-        let phrases = match commands::arguments(&self.mention, &message.plain_text) {
-            Some(_) => None,
-            None => senryu::split_into_phrases(&message.verse_text(), &self.tokenizer),
+        let verses = match commands::arguments(&self.mention, &message.plain_text) {
+            Some(_) => Default::default(),
+            None => senryu::detect(&message.text, &self.dictionary)
+                .with_context(|| format!("Could not analyze edited message {}", message.id))?,
         };
-        let verse = phrases.as_deref().and_then(senryu::detect_senryu);
-        let mogamigawa = phrases.as_deref().and_then(senryu::detect_mogamigawa);
-        let allow_new = verse.is_some() && self.store.is_enabled(message.channel_id).await?;
+        let allow_new =
+            verses.senryu.is_some() && self.store.is_enabled(message.channel_id).await?;
         self.store
-            .revise(message.id, message.channel_id, verse.as_deref(), allow_new)
+            .revise(
+                message.id,
+                message.channel_id,
+                verses.senryu.as_deref(),
+                allow_new,
+            )
             .await?;
         self.store
-            .revise_mogamigawa(message.id, mogamigawa.as_deref())
+            .revise_mogamigawa(message.id, verses.mogamigawa.as_deref())
             .await?;
         Ok(())
     }

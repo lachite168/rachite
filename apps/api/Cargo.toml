@@ -10,7 +10,8 @@ axum = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
-lindera = { version = "0.30", features = ["ipadic"] }
+lindera = { version = "6.2", features = ["embed-sudachidict"] }
+pulldown-cmark = { version = "0.13", default-features = false }
 rand = "0.10"
 regex = "1"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
@@ -24,6 +25,7 @@ tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
 tower-http = { version = "0.7", features = ["trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+unicode-normalization = "0.1"
 utoipa = { version = "6", features = ["chrono", "uuid"] }
 utoipa-swagger-ui = { version = "10", features = ["axum", "vendored"] }
 uuid = { version = "1", features = ["v7", "serde"] }

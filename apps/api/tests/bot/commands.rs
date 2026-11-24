@@ -1,7 +1,7 @@
 use super::{Bot, arguments, command_catalog};
 use crate::{
     bot::stampbomb::Job,
-    senryu::{SenryuStore, tokenizer},
+    senryu::{SenryuStore, VerseDictionary},
     traq::{Message, TraqClient},
 };
 use axum::{
@@ -105,7 +105,7 @@ impl TestBot {
                 client: TraqClient::new(origin.parse().unwrap(), "test-token", BOT_ID).unwrap(),
                 mention: MENTION.into(),
                 store,
-                tokenizer: tokenizer().unwrap(),
+                dictionary: VerseDictionary::sudachidict().unwrap(),
                 stamp_jobs,
             },
             channel: Uuid::now_v7(),
@@ -392,8 +392,10 @@ async fn senryu_events_notify_once_and_keep_published_entries_in_sync() {
     let mut test = TestBot::with_store(SenryuStore::new(db.clone())).await;
     let channel = test.channel;
     let message_id = Uuid::now_v7();
-    let original = "古池や 蛙飛びこむ 水の音";
-    let edited = "柿くへば 鐘が鳴るなり 法隆寺";
+    let original =
+        "1. **古池や**\n2. [蛙飛びこむ](https://example.com)\n\n[添付ファイル]\n\n---\n\n> 水の音";
+    let edited = "柿くへば [添付ファイル] **鐘が鳴るなり** 法隆寺";
+    let attachment = r#"!{"raw":"","type":"file","id":"ee764d5f-71d9-4a40-bc7b-547d8d097c91"}"#;
     let message_event = |kind: &str, is_bot: bool, text: &str| {
         serde_json::from_value(json!({
             "type": kind,
@@ -401,7 +403,7 @@ async fn senryu_events_notify_once_and_keep_published_entries_in_sync() {
                 "id": message_id,
                 "channelId": channel,
                 "user": {"name": "alice", "bot": is_bot},
-                "text": text,
+                "text": text.replace("[添付ファイル]", attachment),
                 "plainText": text,
                 "createdAt": "2026-11-23T01:02:03Z"
             }}
@@ -533,7 +535,8 @@ async fn mogamigawa_responds_once_and_uses_its_own_channel_setting() {
     assert_eq!(updated.verse.as_deref(), Some("古池や\n蛙飛びこむ\n最上川"));
     assert_eq!(updated.detected_at, recorded.detected_at);
 
-    edited.plain_text = "編集で対象外".into();
+    edited.text = "古池や zzzzz 蛙飛びこむ".into();
+    edited.plain_text.clone_from(&edited.text);
     test.bot.handle_updated(&edited).await.unwrap();
     test.bot.handle_deleted(reenabled.id).await.unwrap();
     test.bot.handle_created(&reenabled).await.unwrap();

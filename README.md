@@ -4,7 +4,7 @@ traQ Bot と、Bot が見つけた川柳を閲覧する部内向け Web です�
 
 ## ローカルで起動
 
-WSL などの開発環境に Node.js（`.node-version`）、Rust stable、Docker Compose を用意します。Rust を初めてビルドする際には Lindera が IPADIC 辞書をダウンロードします。
+WSL などの開発環境に Node.js（`.node-version`）、Rust stable、Docker Compose を用意します。Rust を初めてビルドする際には Lindera が SudachiDict を取得し、API のバイナリに組み込みます。
 
 ```bash
 mise trust
