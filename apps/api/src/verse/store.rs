@@ -3,7 +3,7 @@ use sqlx::{FromRow, MySql, MySqlPool, QueryBuilder};
 use uuid::Uuid;
 
 #[derive(Clone)]
-pub struct SenryuStore {
+pub struct VerseStore {
     db: MySqlPool,
 }
 
@@ -83,7 +83,7 @@ impl MogamigawaCursor {
     }
 }
 
-impl SenryuStore {
+impl VerseStore {
     pub fn new(db: MySqlPool) -> Self {
         Self { db }
     }

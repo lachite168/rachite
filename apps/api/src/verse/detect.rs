@@ -1,7 +1,5 @@
-use super::{
-    dictionary::{Reading, VerseDictionary, Word},
-    markdown::extract_text,
-};
+use super::dictionary::{Reading, Word, words};
+use crate::text::{Dictionary, Quotes, extract_text};
 use anyhow::Result;
 
 #[derive(Default)]
@@ -16,9 +14,9 @@ pub(crate) struct Verses {
     pub mogamigawa: Option<String>,
 }
 
-pub(crate) fn detect(source: &str, dictionary: &VerseDictionary) -> Result<Verses> {
-    let text = extract_text(source);
-    let words = dictionary.words(&text)?;
+pub(crate) fn detect(source: &str, dictionary: &Dictionary) -> Result<Verses> {
+    let text = extract_text(source, Quotes::Keep);
+    let words = words(dictionary, &text)?;
     Ok(detect_words(&words))
 }
 
@@ -125,12 +123,12 @@ fn detect_senryu(phrases: &[Phrase]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{VerseDictionary, count_mora, detect};
+    use super::{Dictionary, count_mora, detect};
     use std::sync::OnceLock;
 
-    fn dictionary() -> &'static VerseDictionary {
-        static DICTIONARY: OnceLock<VerseDictionary> = OnceLock::new();
-        DICTIONARY.get_or_init(|| VerseDictionary::sudachidict().unwrap())
+    fn dictionary() -> &'static Dictionary {
+        static DICTIONARY: OnceLock<Dictionary> = OnceLock::new();
+        DICTIONARY.get_or_init(|| Dictionary::sudachidict().unwrap())
     }
 
     #[test]
@@ -149,7 +147,7 @@ mod tests {
         );
     }
 
-    fn detect_senryu(text: &str, dictionary: &VerseDictionary) -> Option<String> {
+    fn detect_senryu(text: &str, dictionary: &Dictionary) -> Option<String> {
         detect(text, dictionary).unwrap().senryu
     }
 

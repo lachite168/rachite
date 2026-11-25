@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 pub(super) const HELP: Command = Command::new(
     "stampbomb <stamp> <number> <message-link>",
-    "指定したメッセージにスタンプを押します。回数は1〜10,000です。",
+    "指定したメッセージにスタンプを押します。回数は1〜100,000です。",
 );
 
 pub(super) async fn execute(
@@ -26,12 +26,12 @@ pub(super) async fn execute(
     };
     if !(1..=i64::from(MAX_PER_JOB)).contains(&count) {
         return Ok(format!(
-            "回数 <number> は1〜{MAX_PER_JOB}の間で指定してください"
+            "回数 <number> は1〜{MAX_PER_JOB}の間で指定してください。"
         ));
     }
     let count = count as u32;
     let Some(message_id) = target_message_id(&bot.client, message, stamp, number, link) else {
-        return Ok("無効なメッセージリンクです".into());
+        return Ok("無効なメッセージリンクです。".into());
     };
 
     let stamp_name = stamp.replace(':', "");
@@ -42,7 +42,7 @@ pub(super) async fn execute(
         .into_iter()
         .find(|s| s.name.eq_ignore_ascii_case(&stamp_name))
     else {
-        return Ok(format!("スタンプ {stamp_name} が見つかりませんでした"));
+        return Ok(format!("スタンプ {stamp_name} が見つかりませんでした。"));
     };
 
     match bot.stamp_jobs.try_send(Job {
@@ -52,7 +52,7 @@ pub(super) async fn execute(
         count,
     }) {
         Ok(()) => Ok(format!(
-            "@{} の代わりに :{}: を {} 回連打します\n{}",
+            "@{} の代わりに :{}: を {} 回連打します。\n{}",
             message.user.name,
             stamp.name,
             count,
@@ -142,7 +142,7 @@ mod tests {
                 "body": {"message": {
                     "id": Uuid::now_v7(),
                     "channelId": Uuid::now_v7(),
-                    "user": {"name": "alice", "bot": false},
+                    "user": {"id": Uuid::from_u128(1), "name": "alice", "bot": false},
                     "text": format!("{mention}  STAMPBOMB\tw 1234\n{target}"),
                     "plainText": format!("@bot_lachite  STAMPBOMB\tw 1234\n{plain}"),
                     "createdAt": "2026-11-23T01:02:03Z"

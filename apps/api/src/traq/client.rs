@@ -1,3 +1,5 @@
+mod messages;
+
 use anyhow::Result;
 use reqwest::{Client, Url, header};
 use serde::Deserialize;
@@ -8,6 +10,8 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async, tungstenite::client::IntoClientRequest,
 };
 use uuid::Uuid;
+
+pub(crate) use messages::Destination;
 
 pub(crate) struct TraqClient {
     http: Client,
@@ -20,6 +24,12 @@ pub(crate) struct TraqClient {
 pub(crate) struct Stamp {
     pub id: Uuid,
     pub name: String,
+}
+
+#[derive(Deserialize)]
+struct Account {
+    id: Uuid,
+    name: String,
 }
 
 impl TraqClient {
@@ -63,30 +73,21 @@ impl TraqClient {
         url
     }
 
-    pub fn message_link(&self, message_id: Uuid) -> String {
-        format!("{}messages/{message_id}", self.origin)
-    }
-
-    pub fn message_id(&self, input: &str) -> Option<Uuid> {
-        let link = input
-            .trim_start_matches('<')
-            .trim_end_matches('>')
-            .parse::<Url>()
-            .ok()?;
-        if link.origin() != self.origin.origin() {
-            return None;
-        }
-        link.path().strip_prefix("/messages/")?.parse().ok()
-    }
-
-    pub async fn reply(&self, channel_id: Uuid, content: &str) -> Result<()> {
-        self.http
-            .post(self.api_url(&format!("channels/{channel_id}/messages")))
-            .json(&json!({ "content": content, "embed": true }))
+    pub async fn user_id(&self, name: &str) -> Result<Option<Uuid>> {
+        let mut url = self.api_url("users");
+        url.query_pairs_mut().append_pair("name", name);
+        let accounts: Vec<Account> = self
+            .http
+            .get(url)
             .send()
             .await?
-            .error_for_status()?;
-        Ok(())
+            .error_for_status()?
+            .json()
+            .await?;
+        Ok(accounts
+            .into_iter()
+            .find(|account| account.name.eq_ignore_ascii_case(name))
+            .map(|account| account.id))
     }
 
     pub async fn set_channel_membership(&self, channel_id: Uuid, join: bool) -> Result<()> {

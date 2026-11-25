@@ -1,12 +1,12 @@
 use axum::http::StatusCode;
 use axum_test::TestServer;
-use rachite_api::{AppState, app, bot::BotStatus, senryu::SenryuStore};
+use rachite_api::{AppState, app, bot::BotStatus, verse::VerseStore};
 use serde_json::{Value, json};
 use sqlx::{MySqlPool, mysql::MySqlPoolOptions};
 use tokio::sync::{OnceCell, watch};
 use uuid::Uuid;
 
-fn make_server(store: SenryuStore) -> TestServer {
+fn make_server(store: VerseStore) -> TestServer {
     let (_, bot_status) = watch::channel(BotStatus::Disabled);
     TestServer::new(app(AppState::new(
         store,
@@ -31,18 +31,27 @@ async fn command_catalog_bot_status_and_invalid_cursor() {
     let db = MySqlPoolOptions::new()
         .connect_lazy("mysql://rachite:unused@127.0.0.1/rachite_test")
         .unwrap();
-    let server = make_server(SenryuStore::new(db));
+    let server = make_server(VerseStore::new(db));
 
     let response = server.get("/commands").await;
     response.assert_status_ok();
     let catalog: Value = response.json();
     assert_eq!(catalog["mention"], "@BOT_lachite");
+    let commands = catalog["commands"].as_array().unwrap();
+    let stampbomb = commands
+        .iter()
+        .find(|command| command["usage"] == "stampbomb <stamp> <number> <message-link>")
+        .expect("stampbomb should be listed in the command catalog");
     assert!(
-        catalog["commands"]
-            .as_array()
+        stampbomb["description"]
+            .as_str()
             .unwrap()
+            .contains("100,000")
+    );
+    assert!(
+        commands
             .iter()
-            .any(|command| command["usage"] == "stampbomb <stamp> <number> <message-link>")
+            .any(|command| command["usage"] == "markov <username> [n] [--here]")
     );
 
     server
@@ -78,7 +87,7 @@ async fn database_backed_routes_report_service_unavailable() {
         .connect_lazy("mysql://rachite:unused@127.0.0.1/rachite_test")
         .unwrap();
     db.close().await;
-    let server = make_server(SenryuStore::new(db));
+    let server = make_server(VerseStore::new(db));
 
     for path in ["/health", "/senryu", "/mogamigawa"] {
         let response = server.get(path).await;
@@ -96,7 +105,7 @@ async fn database_backed_routes_report_service_unavailable() {
 #[ignore = "requires TEST_DATABASE_URL for a dedicated MariaDB database"]
 async fn senryu_lifecycle_and_pagination() {
     let db = test_database().await;
-    let store = SenryuStore::new(db.clone());
+    let store = VerseStore::new(db.clone());
     let server = make_server(store.clone());
     server.get("/health").await.assert_status_ok();
 
@@ -214,7 +223,7 @@ async fn senryu_lifecycle_and_pagination() {
 #[ignore = "requires TEST_DATABASE_URL for a dedicated MariaDB database"]
 async fn mogamigawa_paginates_dated_verses_before_legacy_links() {
     let db = test_database().await;
-    let server = make_server(SenryuStore::new(db.clone()));
+    let server = make_server(VerseStore::new(db.clone()));
     let mut dated_ids: Vec<_> = (0..20).map(|_| Uuid::now_v7()).collect();
     let mut legacy_ids: Vec<_> = (0..21).map(|_| Uuid::now_v7()).collect();
     dated_ids.sort_unstable_by(|a, b| b.cmp(a));

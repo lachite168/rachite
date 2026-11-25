@@ -4,7 +4,7 @@ use chrono::Utc;
 
 pub(super) const HELP: Command = Command::new(
     "ping [文字列]",
-    "pong と、投稿から処理までの経過時間を返します。",
+    "pong と、投稿から処理までの経過時間を返します。任意で文字列をつけると、それも返します。",
 );
 
 pub(super) fn execute(message: &Message, text: Option<&str>) -> String {

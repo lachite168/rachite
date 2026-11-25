@@ -1,7 +1,7 @@
 use crate::{
     bot::{BotStatus, Command, command_catalog},
     error::{ApiError, ErrorBody},
-    senryu::{MogamigawaCursor, SenryuCursor, SenryuStore},
+    verse::{MogamigawaCursor, SenryuCursor, VerseStore},
 };
 use axum::{
     Json, Router,
@@ -29,7 +29,7 @@ fn next_cursor<T>(entries: &mut Vec<T>, encode: impl Fn(&T) -> String) -> Option
 
 #[derive(Clone)]
 pub struct AppState {
-    store: SenryuStore,
+    store: VerseStore,
     traq_origin: Url,
     mention: String,
     bot_status: watch::Receiver<BotStatus>,
@@ -37,7 +37,7 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(
-        store: SenryuStore,
+        store: VerseStore,
         traq_origin: Url,
         mention: String,
         bot_status: watch::Receiver<BotStatus>,

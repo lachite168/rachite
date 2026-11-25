@@ -1,12 +1,10 @@
-# NeoShowcase へのデプロイ
+# NeoShowcase へのデプロイと Bot の運用
 
-Web と API・Bot を同じ Git リポジトリから別々のアプリとしてデプロイします。ここでは `rachite.trap.show` を使います。サブドメインを変える場合は、すべての URL に同じサブドメインを設定します。
+Web と API・Bot を同じ Git リポジトリから別々のアプリとしてデプロイします。以下は `rachite.trap.show` の設定例です。サブドメインを変える場合は、すべての公開 URL で揃えます。
 
 ## リポジトリとアプリを登録
 
-変更をコミットして GitHub に push し、NeoShowcase の Repositories で `lachite168/rachite` を登録します。非公開リポジトリでデプロイキーが表示された場合は、GitHub の Settings → Deploy keys に読み取り用として追加します。
-
-同じリポジトリから、次の設定でアプリを作成します。
+変更を GitHub に push し、NeoShowcase の Repositories で `lachite168/rachite` を登録します。非公開リポジトリでデプロイキーが表示された場合は、GitHub の Settings → Deploy keys に読み取り用として追加します。
 
 | 項目                 | Frontend                 | Backend          |
 | -------------------- | ------------------------ | ---------------- |
@@ -31,9 +29,9 @@ Web と API・Bot を同じ Git リポジトリから別々のアプリとして
 | Backend  | `/api`        | `api`        | `3000/TCP`   | 有効         | Hard |
 | Backend  | `/swagger-ui` | `swagger-ui` | `3000/TCP`   | 無効         | Hard |
 
-`/api/health` は Axum の `/health` に転送されます。Swagger UI のブラウザは同じホストの `/api/openapi.json` を読み込みます。SPA を有効にすると `/senryu` と `/commands` を直接開けます。
+`/api/health` は Axum の `/health` に転送されます。Swagger UI は同じホストの `/api/openapi.json` を読み込みます。SPA を有効にすると `/senryu`、`/mogamigawa`、`/commands` を直接開けます。
 
-## Backend の Environment Variables
+## Backend の環境変数
 
 | キー               | 値                                            |
 | ------------------ | --------------------------------------------- |
@@ -46,13 +44,40 @@ Web と API・Bot を同じ Git リポジトリから別々のアプリとして
 | `TRAQ_ORIGIN`      | 省略時は `https://q.trap.jp`                  |
 | `RUST_LOG`         | 任意。例は `rachite_api=info,tower_http=info` |
 
-アプリは NeoShowcase が設定する `NS_MARIADB_HOSTNAME`、`NS_MARIADB_PORT`、`NS_MARIADB_DATABASE`、`NS_MARIADB_USER`、`NS_MARIADB_PASSWORD` で接続し、起動時にマイグレーションを適用します。Backend の `DATABASE_URL` と Frontend の環境変数は空欄で構いません。ローカルと Compose では引き続き既存の DB 設定を使います。
+API は NeoShowcase が設定する `NS_MARIADB_HOSTNAME`、`NS_MARIADB_PORT`、`NS_MARIADB_DATABASE`、`NS_MARIADB_USER`、`NS_MARIADB_PASSWORD` を使って接続し、起動時にマイグレーションを適用します。Backend の `DATABASE_URL` と Frontend の環境変数は空欄で構いません。
 
-Bot を起動する前に [Bot Console](https://bot-console.trap.jp/) で WebSocket Mode を選び、`MESSAGE_CREATED`、`MENTION_MESSAGE_CREATED`、`MESSAGE_UPDATED`、`MESSAGE_DELETED` を購読します。Access Token は NeoShowcase の環境変数に登録します。Web と API を先に確認する場合は、Bot ID と Access Token を両方未設定にして起動できます。本番の Bot ID に切り替えるときは、旧 Bot を停止してから Backend を1インスタンスで常時稼働させます。
+## Bot の設定と切り替え
+
+Bot Console で対象 Bot を WebSocket Mode にし、次のイベントを購読します。 [Bot Console](https://bot-console.trap.jp/)・[traQ のイベント一覧](https://github.com/traPtitech/traQ-bot-console/blob/dev/src/docs/bot/events/message.md)
+
+| イベント                                     | 用途                                |
+| -------------------------------------------- | ----------------------------------- |
+| `MESSAGE_CREATED`、`MENTION_MESSAGE_CREATED` | チャンネル投稿と Bot 宛てメンション |
+| `MESSAGE_UPDATED`、`MESSAGE_DELETED`         | 川柳・最上川の一覧更新              |
+| `DIRECT_MESSAGE_CREATED`                     | Bot との DM での `markov`           |
+
+Web と API だけを確認する間は、Bot ID と Access Token を両方空欄にできます。テスト用 Bot で一通り確認したら、旧 Bot を停止して本番用の設定に切り替えます。本番の Backend は1インスタンスで稼働させます。
 
 ## デプロイ後の確認
 
-1. 両方のアプリをデプロイし、ビルドログと Backend の `API ready` を確認します。
-2. 未認証のブラウザで `/senryu`、`/api/senryu`、`/swagger-ui/` を開き、認証が求められることを確認します。
-3. 認証後に `/senryu`、`/commands`、`/swagger-ui/` を直接開き、`/api/health` が `{"status":"ok"}` を返すことを確認します。
-4. Bot の有効化後は `/api/bot/status` が `{"status":"connected"}` を返すことを確認し、テスト用チャンネルで Bot に `ping` を送ります。
+1. 両アプリのビルドログと、Backend の `API ready` を確認します。
+2. 未認証で Web、`/api/senryu`、`/swagger-ui/` にアクセスし、Hard 認証が求められることを確認します。Backend のポートへ未認証で直接到達できないことも確認します。
+3. 認証後に `/senryu`、`/mogamigawa`、`/commands`、`/swagger-ui/` を直接開きます。`/api/health` が `{"status":"ok"}` を返すことを確認します。
+4. テスト Bot の `/api/bot/status` が `{"status":"connected"}` を返すことを確認します。チャンネルで `ping` と `join` を試します。 [Bot 接続の切り分け](handout.md#bot-接続の確認)
+5. テスト用チャンネルと Bot との DM で `markov <username>` と `markov <username> --here` を試します。検索範囲と返信先を確認します。
+6. 川柳・最上川をオンにしたチャンネルで通常の投稿、編集、削除を試し、Web 一覧への反映を確認します。最上川の返信と3種のスタンプ、引用リンクを使った少数回の `stampbomb` も確認します。 [機能仕様](specs.md)
+
+## Bot のプロフィールを確認・更新する
+
+リポジトリのルートで実行します。`.env` または環境変数の `TRAQ_BOT_TOKEN` が指す Bot を操作します。`TRAQ_ORIGIN` の既定値は `https://q.trap.jp` です。
+
+```bash
+# 現在の表示名とひとことを表示
+node --env-file-if-exists=.env scripts/traq-profile.mjs
+
+# ひとことを更新
+node --env-file-if-exists=.env scripts/traq-profile.mjs --bio="川柳を探しています"
+
+# ひとことを空にし、表示名も更新
+node --env-file-if-exists=.env scripts/traq-profile.mjs --bio= --display-name="らちて"
+```

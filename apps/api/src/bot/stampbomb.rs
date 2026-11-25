@@ -6,7 +6,7 @@ use tokio::{
 };
 use uuid::Uuid;
 
-pub(super) const MAX_PER_JOB: u32 = 10_000;
+pub(super) const MAX_PER_JOB: u32 = 100_000;
 const MAX_PER_REQUEST: u32 = 100;
 const MIN_REQUEST_INTERVAL: Duration = Duration::from_millis(50);
 

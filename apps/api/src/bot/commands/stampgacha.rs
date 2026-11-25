@@ -10,12 +10,12 @@ const INVALID_REGEXP: &str = "無効な正規表現です。パターンとフ�
 
 pub(super) const HELP: Command = Command::new(
     "stampgacha <search>",
-    "指定した文字列を名前に含むスタンプから抽選します。",
+    "指定した文字列を名前に含むスタンプからランダムに 1 つ出します。",
 );
 
 pub(super) const REGEX_HELP: Command = Command::new(
     "stampgacha /pattern/[flags]",
-    "ECMAScript の正規表現に一致する名前から抽選します。既定では大文字・小文字を区別しません。区別する例は /(?-i:^N3)/ です。",
+    "ECMAScript の正規表現にマッチするスタンプからランダムに 1 つ出します。既定では大文字・小文字を区別しません。",
 );
 
 pub(super) async fn execute(bot: &Bot, search: Option<&str>) -> Result<String> {
@@ -49,9 +49,9 @@ pub(super) async fn execute(bot: &Bot, search: Option<&str>) -> Result<String> {
 
     match matches {
         Ok(names) => Ok(gacha::draw_reply(&names)
-            .unwrap_or_else(|| "正規表現に一致するスタンプが見つかりませんでした".into())),
+            .unwrap_or_else(|| "正規表現に一致するスタンプが見つかりませんでした。".into())),
         Err(MatchError::InvalidPattern) => Ok(INVALID_REGEXP.into()),
-        Err(MatchError::TimedOut) => Ok("正規表現の照合が時間切れになりました".into()),
+        Err(MatchError::TimedOut) => Ok("正規表現の照合が時間切れになりました。".into()),
         Err(error) => Err(error.into()),
     }
 }

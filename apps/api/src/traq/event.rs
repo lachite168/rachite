@@ -8,6 +8,9 @@ pub(crate) enum Event {
     MessageCreated {
         body: MessageBody<Message>,
     },
+    DirectMessageCreated {
+        body: MessageBody<Message>,
+    },
     MessageUpdated {
         body: MessageBody<Message>,
     },
@@ -45,6 +48,7 @@ pub(crate) struct DeletedMessage {
 
 #[derive(Deserialize)]
 pub(crate) struct User {
+    pub id: Uuid,
     pub name: String,
     pub bot: bool,
 }
@@ -68,7 +72,11 @@ mod tests {
             "createdAt": "2026-11-23T01:02:03Z"
         });
 
-        for event_type in ["MESSAGE_CREATED", "MESSAGE_UPDATED"] {
+        for event_type in [
+            "MESSAGE_CREATED",
+            "MESSAGE_UPDATED",
+            "DIRECT_MESSAGE_CREATED",
+        ] {
             let event: Event = serde_json::from_value(json!({
                 "type": event_type,
                 "reqId": "sample-request",
@@ -87,12 +95,19 @@ mod tests {
                     Event::MessageUpdated {
                         body: MessageBody { message },
                     },
+                )
+                | (
+                    "DIRECT_MESSAGE_CREATED",
+                    Event::DirectMessageCreated {
+                        body: MessageBody { message },
+                    },
                 ) => message,
                 _ => panic!("incorrectly decoded {event_type}"),
             };
             assert_eq!(message.id, id);
             assert_eq!(message.channel_id, channel);
             assert_eq!(message.user.name, "alice");
+            assert_eq!(message.user.id, user);
             assert!(!message.user.bot);
             assert_eq!(message.plain_text, "new text");
         }
