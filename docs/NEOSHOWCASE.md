@@ -48,7 +48,7 @@ Web と API・Bot を同じ Git リポジトリから別々のアプリとして
 
 アプリは NeoShowcase が設定する `NS_MARIADB_HOSTNAME`、`NS_MARIADB_PORT`、`NS_MARIADB_DATABASE`、`NS_MARIADB_USER`、`NS_MARIADB_PASSWORD` で接続し、起動時にマイグレーションを適用します。Backend の `DATABASE_URL` と Frontend の環境変数は空欄で構いません。ローカルと Compose では引き続き既存の DB 設定を使います。
 
-Bot を起動する前に [Bot Console](https://bot-console.trap.jp/) で WebSocket Mode を選び、`MESSAGE_CREATED`、`MENTION_MESSAGE_CREATED`、`MESSAGE_UPDATED`、`MESSAGE_DELETED` を購読します。Access Token は NeoShowcase の環境変数に登録します。Web と API を先に確認する場合は、Bot ID と Access Token を両方未設定にして起動できます。本番の Bot ID に切り替えるときは、旧 Bot を停止してから Backend を1インスタンスで常時稼働させます。
+Bot を起動する前に [Bot Console](https://bot-console.trap.jp/) で WebSocket Mode を選び、`MESSAGE_CREATED`、`MENTION_MESSAGE_CREATED`、`MESSAGE_UPDATED`、`MESSAGE_DELETED`、`DIRECT_MESSAGE_CREATED` を購読します。`DIRECT_MESSAGE_CREATED` は Bot との DM で `markov` を使うために必要です。Access Token は NeoShowcase の環境変数に登録します。Web と API を先に確認する場合は、Bot ID と Access Token を両方未設定にして起動できます。本番の Bot ID に切り替えるときは、旧 Bot を停止してから Backend を1インスタンスで常時稼働させます。
 
 ## デプロイ後の確認
 
@@ -56,3 +56,4 @@ Bot を起動する前に [Bot Console](https://bot-console.trap.jp/) で WebSoc
 2. 未認証のブラウザで `/senryu`、`/api/senryu`、`/swagger-ui/` を開き、認証が求められることを確認します。
 3. 認証後に `/senryu`、`/commands`、`/swagger-ui/` を直接開き、`/api/health` が `{"status":"ok"}` を返すことを確認します。
 4. Bot の有効化後は `/api/bot/status` が `{"status":"connected"}` を返すことを確認し、テスト用チャンネルで Bot に `ping` を送ります。
+5. テスト用チャンネルと Bot との DM で `markov <username> [--here]` を試し、それぞれ実行した場所に返信が表示されることを確認します。

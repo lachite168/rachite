@@ -4,7 +4,7 @@
 
 ## 再開時に確認すること
 
-2026年11月24日の辞書移行は `fix/dict` で進めます。別のチェックアウトで再開する場合は `git status --short --branch` でブランチと作業ツリーを確認してください。
+2026年11月25日のマルコフ生成は `feat/markov` で進めます。別のチェックアウトで再開する場合は `git status --short --branch` でブランチと作業ツリーを確認してください。
 
 `apps/web` は React + TypeScript + MUI、`apps/api` は Rust + Axum + Tokio です。Axum と traQ Bot は同じプロセスで起動し、SQLx 経由で MariaDB を使います。テンプレートの要件は [TEMPLATE_REQUIREMENTS.md](TEMPLATE_REQUIREMENTS.md) に記録されています。
 
@@ -41,6 +41,13 @@ Rust は `bot.rs` + `bot/` のようにモジュール名と同じファイル�
 - Rust が先頭の引数を読み、通常の部分一致と正規表現を振り分けます。正規表現では、traQ から取得したスタンプ一覧とパターン・フラグを1回の `tokio::task::spawn_blocking` に渡します。QuickJS のコンテキストはタスク内に閉じ、`RegExp` を一度コンパイルし、各名前の照合前に `lastIndex` を `0` にします。抽選と返信は Rust が担当します。 [コマンドの入口](../apps/api/src/bot/commands/stampgacha.rs)
 - `rquickjs` のビルドで QuickJS の C ソースをコンパイルします。Bot はブロッキングタスクの結果を待つため、スタンプ一覧の取得後、コンパイルと照合に 250 ms の期限を設けます。照合中は QuickJS の割り込みハンドラーで期限を確認します。模擬スタンプ名1万件を WSL のデバッグビルドで照合したところ、2種類の式を各5回実行して最長は約27 ms でした。実際の traQ の一覧は認証が必要で、計測には使っていません。 [照合処理](../apps/api/src/bot/commands/stampgacha/regexp.rs) · [割り込み API](https://docs.rs/rquickjs/latest/rquickjs/struct.Runtime.html#method.set_interrupt_handler)
 - テスト専用の Bot コマンドテストは `apps/api/tests/bot/` に置きます。模擬 traQ で ECMAScript の構文とフラグ、区切りのスラッシュ、入力エラー、実行中の時間切れと次のコマンドへの返信を確認します。 [コマンドのテスト](../apps/api/tests/bot/commands.rs)
+
+## markov の実装引き継ぎ
+
+- `markov <username> [n] [--here]` の使い方は既存のコマンド定義に登録します。チャンネルと Bot との DM で同じ構文を使います。 [マルコフ生成の仕様](specs.md#マルコフ生成) · [コマンドの入口](../apps/api/src/bot/commands.rs)
+- 公開チャンネル全体とチャンネル内の検索には `GET /messages` を使用し、投稿者の UUID を `from` に渡します。チャンネルの `--here` では `in` も指定します。DM の `--here` は `GET /users/{送信者ID}/messages` で履歴を取得し、対象ユーザーの UUID で絞ります。DM の返信も同じ送信者 ID のエンドポイントに送ります。 [traQ v3 OpenAPI](https://github.com/traPtitech/traQ/blob/master/docs/v3-api.yaml)
+- 検索・履歴取得から生成までを単一のワーカーに渡し、形態素解析と生成は `spawn_blocking` で実行します。川柳と共用する本文抽出ではリンクの表示ラベルを残し、マルコフ生成では引用ブロックの中身を除きます。生成結果は traQ の自動埋め込みを無効にして投稿します。
+- テスト Bot で `DIRECT_MESSAGE_CREATED` を購読します。チャンネルと Bot との DM で、それぞれ `markov <username>` と `markov <username> --here` を試し、検索範囲、対象者がその場所に投稿していないときの返信、実行元への返信を確認します。Bot のトークンで検索・DM 履歴が取得できるかも確認します。 [traQ の DM イベント配信](https://github.com/traPtitech/traQ/blob/master/service/bot/handler/ev_message_created.go#L33-L57)
 
 ## 川柳設定の最新仕様
 
