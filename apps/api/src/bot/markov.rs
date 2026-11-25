@@ -96,7 +96,7 @@ async fn execute(
     })
     .await??;
     Ok(match result {
-        (_, Some(text)) => format_reply(&job.username, order, &text),
+        (_, Some(text)) => text,
         (false, None) => format!(
             "{scope}に `{}` の生成に使える発言がありません。",
             job.username
@@ -133,15 +133,9 @@ enum EmbeddedMention {
     User { raw: String },
 }
 
-fn format_reply(username: &str, order: usize, text: &str) -> String {
-    let fence_length = text.split(|ch| ch != '`').map(str::len).max().unwrap_or(0) + 1;
-    let fence = "`".repeat(fence_length.max(3));
-    format!("マルコフ生成 · `{username}` · {order}階\n{fence}\n{text}\n{fence}")
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{format_reply, is_command};
+    use super::is_command;
 
     #[test]
     fn skips_leading_bot_mentions_in_history() {
@@ -152,13 +146,5 @@ mod tests {
         assert!(is_command(mention, &format!(" {embedded} markov alice")));
         assert!(!is_command(mention, &format!("{embedded}さん")));
         assert!(!is_command(mention, "hello @BOT_lachite"));
-    }
-
-    #[test]
-    fn formats_generated_text_as_literal_markdown() {
-        assert_eq!(
-            format_reply("alice", 2, "例 ``` Markdown"),
-            "マルコフ生成 · `alice` · 2階\n````\n例 ``` Markdown\n````"
-        );
     }
 }

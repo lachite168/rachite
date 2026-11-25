@@ -47,7 +47,7 @@ Rust は `bot.rs` + `bot/` のようにモジュール名と同じファイル�
 - `markov <username> [n] [--here]` の使い方は既存のコマンド定義に登録します。チャンネルと Bot との DM で同じ構文を使います。 [マルコフ生成の仕様](specs.md#マルコフ生成) · [コマンドの入口](../apps/api/src/bot/commands.rs)
 - 公開チャンネル全体とチャンネル内の検索には `GET /messages` を使用し、投稿者の UUID を `from` に渡します。チャンネルの `--here` では `in` も指定します。DM の `--here` は `GET /users/{送信者ID}/messages` で履歴を取得し、対象ユーザーの UUID で絞ります。DM の返信も同じ送信者 ID のエンドポイントに送ります。 [traQ v3 OpenAPI](https://github.com/traPtitech/traQ/blob/master/docs/v3-api.yaml)
 - 検索・履歴取得から生成までを単一のワーカーに渡し、形態素解析と生成は `spawn_blocking` で実行します。川柳と共用する本文抽出ではリンクの表示ラベルを残し、マルコフ生成では引用ブロックの中身を除きます。生成結果は traQ の自動埋め込みを無効にして投稿します。 [ワーカー](../apps/api/src/bot/markov.rs) · [共用の辞書](../apps/api/src/text.rs) · [共用の本文抽出](../apps/api/src/text/markdown.rs)
-- 模擬 traQ のテストで、チャンネルと DM での検索範囲と返信先、ページングの300件上限、DM 内の投稿者の絞り込みを確認できます。 [markov のテスト](../apps/api/tests/bot/markov.rs)
+- 模擬 traQ のテストで、大文字・小文字を区別しないアカウント名の照合、生成文だけの返信、チャンネルと DM での検索範囲と返信先、ページングの300件上限、DM 内の投稿者の絞り込みを確認できます。 [markov のテスト](../apps/api/tests/bot/markov.rs)
 - 設定済みの Bot トークンで traQ のユーザー照会と公開検索が HTTP 200 を返すことを確認しました。実際の DM は、テスト Bot で `DIRECT_MESSAGE_CREATED` を購読してから `markov <username>` と `markov <username> --here` を試し、履歴を取得できることと返信先を確認します。 [traQ の DM イベント配信](https://github.com/traPtitech/traQ/blob/master/service/bot/handler/ev_message_created.go#L33-L57)
 
 ## 川柳設定の最新仕様

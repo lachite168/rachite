@@ -86,7 +86,7 @@ impl TraqClient {
             .await?;
         Ok(accounts
             .into_iter()
-            .find(|account| account.name == name)
+            .find(|account| account.name.eq_ignore_ascii_case(name))
             .map(|account| account.id))
     }
 

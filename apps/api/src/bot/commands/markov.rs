@@ -47,8 +47,10 @@ fn parse(mut args: SplitWhitespace<'_>) -> Option<(&str, usize, bool)> {
         s.bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
     };
-    let valid_name = match username.strip_prefix("Webhook#") {
-        Some(suffix) => suffix.len() == 22 && valid_characters(suffix),
+    let valid_name = match username.split_once('#') {
+        Some((prefix, suffix)) => {
+            prefix.eq_ignore_ascii_case("Webhook") && suffix.len() == 22 && valid_characters(suffix)
+        }
         None => (1..=32).contains(&username.len()) && valid_characters(username),
     };
     if !valid_name || name == "--here" {
@@ -80,6 +82,10 @@ mod tests {
             ("@Alice --here", Some(("Alice", 2, true))),
             ("alice 1", Some(("alice", 1, false))),
             ("alice 4 --here", Some(("alice", 4, true))),
+            (
+                "@webHOOK#abcdefghijklmnopqrstuv",
+                Some(("webHOOK#abcdefghijklmnopqrstuv", 2, false)),
+            ),
             ("@-alice", Some(("-alice", 2, false))),
             ("", None),
             ("--here", None),

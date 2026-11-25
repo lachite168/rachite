@@ -21,6 +21,16 @@ const CHANNEL: Uuid = Uuid::from_u128(3);
 const DM: Uuid = Uuid::from_u128(4);
 const CREATED_AT: &str = "2026-11-25T12:34:56Z";
 const NO_NEW_TEXT: &str = "この階数では新しい文を作れませんでした。`n` を下げて試してください。";
+const GENERATION_POSTS: &[(&str, &str)] = &[
+    ("Red", "fish"),
+    ("Blue", "cake"),
+    ("Green", "boat"),
+    ("White", "milk"),
+    ("Pink", "book"),
+    ("Black", "rice"),
+    ("Brown", "soup"),
+    ("Purple", "pizza"),
+];
 
 struct Call {
     url: Url,
@@ -51,14 +61,25 @@ async fn mock_traq(State(calls): State<mpsc::UnboundedSender<Call>>, request: Re
     let call = Call { url, body: None };
     let reply = match call.url.path() {
         "/api/v3/users" => match call.query("name").as_deref() {
-            Some("alice") => json!([{ "id": ALICE, "name": "alice" }]),
+            Some(name) if name.eq_ignore_ascii_case("alice") => {
+                json!([{ "id": ALICE, "name": "alice" }])
+            }
             Some("bob") => json!([{ "id": BOB, "name": "bob" }]),
             _ => json!([]),
         },
         "/api/v3/messages" => {
             let author: Uuid = call.query("from").unwrap().parse().unwrap();
-            let limit = if call.query("in").is_some() { 100 } else { 1 };
-            json!({ "hits": posts(&call, limit, author, CHANNEL) })
+            let here = call.query("in").is_some();
+            if author == ALICE && !here {
+                let mut history = posts(&call, GENERATION_POSTS.len(), author, CHANNEL);
+                for (post, (start, end)) in history.iter_mut().zip(GENERATION_POSTS) {
+                    post["content"] = json!(format!("{start} marker {end}"));
+                }
+                json!({ "hits": history })
+            } else {
+                let limit = if here { 100 } else { 1 };
+                json!({ "hits": posts(&call, limit, author, CHANNEL) })
+            }
         }
         path if path == format!("/api/v3/users/{ALICE}/messages") => {
             let limit = call.query("limit").unwrap().parse().unwrap();
@@ -170,6 +191,38 @@ impl Fixture {
             Some(json!({ "content": content, "embed": false }))
         );
     }
+}
+
+#[tokio::test]
+async fn matches_the_username_without_case_and_posts_only_the_generated_text() {
+    let mut test = Fixture::new().await;
+    test.send(false, "markov @aLiCe 1").await;
+    let lookup = test.next_call().await;
+    assert_eq!(lookup.url.path(), "/api/v3/users");
+    let search = test.next_call().await;
+    assert_eq!(search.url.path(), "/api/v3/messages");
+    assert_eq!(search.query("from"), Some(ALICE.to_string()));
+
+    let reply = test.next_call().await;
+    assert_eq!(
+        reply.url.path(),
+        format!("/api/v3/channels/{CHANNEL}/messages")
+    );
+    let body = reply.body.unwrap();
+    let text = body["content"].as_str().unwrap();
+    let (start, end) = text
+        .split_once(" marker ")
+        .unwrap_or_else(|| panic!("unexpected reply: {text:?}"));
+    assert!(
+        GENERATION_POSTS.iter().any(|&(word, _)| word == start),
+        "{text:?}"
+    );
+    assert!(
+        GENERATION_POSTS.iter().any(|&(_, word)| word == end),
+        "{text:?}"
+    );
+    assert!(!GENERATION_POSTS.contains(&(start, end)));
+    assert_eq!(body["embed"], false);
 }
 
 #[tokio::test]
