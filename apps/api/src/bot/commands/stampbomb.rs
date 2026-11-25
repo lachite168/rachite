@@ -142,7 +142,7 @@ mod tests {
                 "body": {"message": {
                     "id": Uuid::now_v7(),
                     "channelId": Uuid::now_v7(),
-                    "user": {"name": "alice", "bot": false},
+                    "user": {"id": Uuid::from_u128(1), "name": "alice", "bot": false},
                     "text": format!("{mention}  STAMPBOMB\tw 1234\n{target}"),
                     "plainText": format!("@bot_lachite  STAMPBOMB\tw 1234\n{plain}"),
                     "createdAt": "2026-11-23T01:02:03Z"

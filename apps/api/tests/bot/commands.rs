@@ -1,7 +1,8 @@
 use super::{Bot, arguments, command_catalog};
 use crate::{
     bot::stampbomb::Job,
-    senryu::{SenryuStore, VerseDictionary},
+    senryu::SenryuStore,
+    text::Dictionary,
     traq::{Message, TraqClient},
 };
 use axum::{
@@ -12,7 +13,7 @@ use axum::{
 };
 use serde_json::{Value, json};
 use sqlx::{MySqlPool, mysql::MySqlPoolOptions};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tokio::{
     net::TcpListener,
     sync::{OnceCell, mpsc},
@@ -105,8 +106,9 @@ impl TestBot {
                 client: TraqClient::new(origin.parse().unwrap(), "test-token", BOT_ID).unwrap(),
                 mention: MENTION.into(),
                 store,
-                dictionary: VerseDictionary::sudachidict().unwrap(),
+                dictionary: Arc::new(Dictionary::sudachidict().unwrap()),
                 stamp_jobs,
+                markov_jobs: mpsc::channel(1).0,
             },
             channel: Uuid::now_v7(),
             requests,
@@ -123,7 +125,7 @@ impl TestBot {
         serde_json::from_value(json!({
             "id": Uuid::now_v7(),
             "channelId": self.channel,
-            "user": {"name": "alice", "bot": false},
+            "user": {"id": Uuid::from_u128(12), "name": "alice", "bot": false},
             "text": text,
             "plainText": plain_text,
             "createdAt": chrono::Utc::now()
@@ -402,7 +404,7 @@ async fn senryu_events_notify_once_and_keep_published_entries_in_sync() {
             "body": {"message": {
                 "id": message_id,
                 "channelId": channel,
-                "user": {"name": "alice", "bot": is_bot},
+                "user": {"id": Uuid::from_u128(12), "name": "alice", "bot": is_bot},
                 "text": text.replace("[添付ファイル]", attachment),
                 "plainText": text,
                 "createdAt": "2026-11-23T01:02:03Z"

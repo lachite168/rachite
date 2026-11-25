@@ -46,8 +46,9 @@ Rust は `bot.rs` + `bot/` のようにモジュール名と同じファイル�
 
 - `markov <username> [n] [--here]` の使い方は既存のコマンド定義に登録します。チャンネルと Bot との DM で同じ構文を使います。 [マルコフ生成の仕様](specs.md#マルコフ生成) · [コマンドの入口](../apps/api/src/bot/commands.rs)
 - 公開チャンネル全体とチャンネル内の検索には `GET /messages` を使用し、投稿者の UUID を `from` に渡します。チャンネルの `--here` では `in` も指定します。DM の `--here` は `GET /users/{送信者ID}/messages` で履歴を取得し、対象ユーザーの UUID で絞ります。DM の返信も同じ送信者 ID のエンドポイントに送ります。 [traQ v3 OpenAPI](https://github.com/traPtitech/traQ/blob/master/docs/v3-api.yaml)
-- 検索・履歴取得から生成までを単一のワーカーに渡し、形態素解析と生成は `spawn_blocking` で実行します。川柳と共用する本文抽出ではリンクの表示ラベルを残し、マルコフ生成では引用ブロックの中身を除きます。生成結果は traQ の自動埋め込みを無効にして投稿します。
-- テスト Bot で `DIRECT_MESSAGE_CREATED` を購読します。チャンネルと Bot との DM で、それぞれ `markov <username>` と `markov <username> --here` を試し、検索範囲、対象者がその場所に投稿していないときの返信、実行元への返信を確認します。Bot のトークンで検索・DM 履歴が取得できるかも確認します。 [traQ の DM イベント配信](https://github.com/traPtitech/traQ/blob/master/service/bot/handler/ev_message_created.go#L33-L57)
+- 検索・履歴取得から生成までを単一のワーカーに渡し、形態素解析と生成は `spawn_blocking` で実行します。川柳と共用する本文抽出ではリンクの表示ラベルを残し、マルコフ生成では引用ブロックの中身を除きます。生成結果は traQ の自動埋め込みを無効にして投稿します。 [ワーカー](../apps/api/src/bot/markov.rs) · [共用の辞書](../apps/api/src/text.rs) · [共用の本文抽出](../apps/api/src/text/markdown.rs)
+- 模擬 traQ のテストで、チャンネルと DM での検索範囲と返信先、ページングの300件上限、DM 内の投稿者の絞り込みを確認できます。 [markov のテスト](../apps/api/tests/bot/markov.rs)
+- 設定済みの Bot トークンで traQ のユーザー照会と公開検索が HTTP 200 を返すことを確認しました。実際の DM は、テスト Bot で `DIRECT_MESSAGE_CREATED` を購読してから `markov <username>` と `markov <username> --here` を試し、履歴を取得できることと返信先を確認します。 [traQ の DM イベント配信](https://github.com/traPtitech/traQ/blob/master/service/bot/handler/ev_message_created.go#L33-L57)
 
 ## 川柳設定の最新仕様
 
@@ -66,7 +67,7 @@ Rust は `bot.rs` + `bot/` のようにモジュール名と同じファイル�
 
 ## SudachiDict への移行
 
-1. `markdown.rs` は `pulldown-cmark` のイベントから本文を抽出し、traQ 固有の埋め込み、スタンプ、メンション、ネタバレを補足処理します。`plainText` は traQ が埋め込みの一部を置換した結果なので、判定には元の `text` を使います。 [実装](../apps/api/src/senryu/markdown.rs) · [traQ の本文変換](https://github.com/traPtitech/traQ/blob/master/utils/message/parser.go)
+1. `markdown.rs` は `pulldown-cmark` のイベントから本文を抽出し、traQ 固有の埋め込み、スタンプ、メンション、ネタバレを補足処理します。`plainText` は traQ が埋め込みの一部を置換した結果なので、判定には元の `text` を使います。 [実装](../apps/api/src/text/markdown.rs) · [traQ の本文変換](https://github.com/traPtitech/traQ/blob/master/utils/message/parser.go)
 2. `dictionary.rs` は Lindera の同梱 SudachiDict から読みと品詞を項目名で取得します。英字は小文字で辞書を引き、掲載には元の綴りを使います。`detect.rs` は読み不明の語で川柳の探索を区切り、最上川の判定を見送ります。 [辞書との接続](../apps/api/src/senryu/dictionary.rs) · [文節と拍数の判定](../apps/api/src/senryu/detect.rs) · [Lindera の辞書形式](https://lindera.github.io/lindera/lindera-sudachidict/dictionary_format.html)
 3. 既存の掲載結果は移行時に再計算しません。編集時に新しい解析を使って一覧だけ更新し、削除時は従来どおり取り下げます。解析エラーと解析が成功した結果の未検出を区別します。 [イベント処理](../apps/api/src/bot.rs)
 4. テストでは本文抽出と句の判定をそれぞれ確認します。同じ句を通常文・リスト・引用・リンクで書いた場合、装飾しかない投稿、読み不明の語の前後に句がある場合を含めます。模擬 traQ では両方の本文フィールドが異なるイベントを使います。 [検出仕様](specs.md#川柳と最上川の本文抽出拍数)

@@ -1,5 +1,6 @@
 use anyhow::Result;
-use reqwest::{Client, Url, header};
+use chrono::{DateTime, Utc};
+use reqwest::{Client, RequestBuilder, Url, header};
 use serde::Deserialize;
 use serde_json::json;
 use std::time::Duration;
@@ -8,6 +9,8 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async, tungstenite::client::IntoClientRequest,
 };
 use uuid::Uuid;
+
+const HISTORY_LIMIT: usize = 300;
 
 pub(crate) struct TraqClient {
     http: Client,
@@ -20,6 +23,47 @@ pub(crate) struct TraqClient {
 pub(crate) struct Stamp {
     pub id: Uuid,
     pub name: String,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum Destination {
+    Channel(Uuid),
+    Direct { user_id: Uuid, channel_id: Uuid },
+}
+
+impl Destination {
+    pub fn channel_id(self) -> Uuid {
+        match self {
+            Self::Channel(id) | Self::Direct { channel_id: id, .. } => id,
+        }
+    }
+
+    fn messages_path(self) -> String {
+        match self {
+            Self::Channel(id) => format!("channels/{id}/messages"),
+            Self::Direct { user_id, .. } => format!("users/{user_id}/messages"),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct HistoryMessage {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub channel_id: Uuid,
+    pub content: String,
+}
+
+#[derive(Deserialize)]
+struct Account {
+    id: Uuid,
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct SearchResults {
+    hits: Vec<HistoryMessage>,
 }
 
 impl TraqClient {
@@ -80,13 +124,112 @@ impl TraqClient {
     }
 
     pub async fn reply(&self, channel_id: Uuid, content: &str) -> Result<()> {
+        self.post_message(Destination::Channel(channel_id), content, true)
+            .await
+    }
+
+    pub async fn post_message(
+        &self,
+        destination: Destination,
+        content: &str,
+        embed: bool,
+    ) -> Result<()> {
         self.http
-            .post(self.api_url(&format!("channels/{channel_id}/messages")))
-            .json(&json!({ "content": content, "embed": true }))
+            .post(self.api_url(&destination.messages_path()))
+            .json(&json!({ "content": content, "embed": embed }))
             .send()
             .await?
             .error_for_status()?;
         Ok(())
+    }
+
+    pub async fn user_id(&self, name: &str) -> Result<Option<Uuid>> {
+        let mut url = self.api_url("users");
+        url.query_pairs_mut().append_pair("name", name);
+        let accounts: Vec<Account> = self
+            .http
+            .get(url)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        Ok(accounts
+            .into_iter()
+            .find(|account| account.name == name)
+            .map(|account| account.id))
+    }
+
+    pub async fn search_history(
+        &self,
+        user_id: Uuid,
+        channel_id: Option<Uuid>,
+        before: DateTime<Utc>,
+    ) -> Result<Vec<HistoryMessage>> {
+        const PAGE_SIZE: usize = 100;
+        let mut history = Vec::new();
+        let mut url = self.api_url("messages");
+        url.query_pairs_mut()
+            .append_pair("from", &user_id.to_string())
+            .append_pair("before", &before.to_rfc3339())
+            .append_pair("sort", "createdAt");
+        if let Some(channel_id) = channel_id {
+            url.query_pairs_mut()
+                .append_pair("in", &channel_id.to_string());
+        }
+        for offset in (0..HISTORY_LIMIT).step_by(PAGE_SIZE) {
+            let limit = PAGE_SIZE.min(HISTORY_LIMIT - offset);
+            let page: SearchResults = self
+                .history_page(&url, limit, offset)
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await?;
+            let complete = page.hits.len() < limit;
+            history.extend(page.hits.into_iter().take(limit));
+            if complete {
+                break;
+            }
+        }
+        Ok(history)
+    }
+
+    pub async fn direct_history(
+        &self,
+        user_id: Uuid,
+        before: DateTime<Utc>,
+    ) -> Result<Vec<HistoryMessage>> {
+        const PAGE_SIZE: usize = 200;
+        let mut history = Vec::new();
+        let mut url = self.api_url(&format!("users/{user_id}/messages"));
+        url.query_pairs_mut()
+            .append_pair("until", &before.to_rfc3339())
+            .append_pair("order", "desc");
+        for offset in (0..HISTORY_LIMIT).step_by(PAGE_SIZE) {
+            let limit = PAGE_SIZE.min(HISTORY_LIMIT - offset);
+            let page: Vec<HistoryMessage> = self
+                .history_page(&url, limit, offset)
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await?;
+            let complete = page.len() < limit;
+            history.extend(page.into_iter().take(limit));
+            if complete {
+                break;
+            }
+        }
+        Ok(history)
+    }
+
+    fn history_page(&self, url: &Url, limit: usize, offset: usize) -> RequestBuilder {
+        let mut url = url.clone();
+        url.query_pairs_mut()
+            .append_pair("limit", &limit.to_string())
+            .append_pair("offset", &offset.to_string());
+        self.http.get(url)
     }
 
     pub async fn set_channel_membership(&self, channel_id: Uuid, join: bool) -> Result<()> {

@@ -36,7 +36,12 @@ fn mark_embeddings(text: &str) -> Cow<'_, str> {
     })
 }
 
-pub(super) fn extract_text(source: &str) -> String {
+pub(crate) enum Quotes {
+    Keep,
+    Omit,
+}
+
+pub(crate) fn extract_text(source: &str, quotes: Quotes) -> String {
     let source = mark_embeddings(source);
     let options = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_MATH;
     let mut text = String::new();
@@ -52,6 +57,10 @@ pub(super) fn extract_text(source: &str) -> String {
         }
 
         match event {
+            Event::Start(Tag::BlockQuote(_)) if matches!(quotes, Quotes::Omit) => {
+                ignored_depth = 1;
+                text.push(' ');
+            }
             Event::Start(
                 Tag::CodeBlock(_)
                 | Tag::Image { .. }
@@ -98,7 +107,17 @@ pub(super) fn extract_text(source: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_text;
+    use super::{Quotes, extract_text as extract};
+
+    fn extract_text(source: &str) -> String {
+        extract(source, Quotes::Keep)
+    }
+
+    #[test]
+    fn can_keep_link_labels_while_removing_nested_quotes() {
+        let source = "[明日の予定](https://example.com)\n\n> 秘密\n> > 深い引用\n\n本文";
+        assert_eq!(extract(source, Quotes::Omit), "明日の予定 本文");
+    }
 
     #[test]
     fn extracts_prose_across_markdown_blocks() {

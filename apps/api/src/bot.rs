@@ -1,17 +1,22 @@
 mod commands;
+mod markov;
+#[cfg(test)]
+#[path = "../tests/bot/markov.rs"]
+mod markov_tests;
 mod mogamigawa;
 mod stampbomb;
 
 use crate::{
     config::BotConfig,
-    senryu::{self, SenryuStore, VerseDictionary},
+    senryu::{self, SenryuStore},
+    text::Dictionary,
     traq::{Event, Message, TraqClient},
 };
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use reqwest::Url;
 use serde::Serialize;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, watch},
     task::JoinHandle,
@@ -21,6 +26,7 @@ use utoipa::ToSchema;
 pub use commands::{Command, command_catalog};
 
 const STAMP_QUEUE_CAPACITY: usize = 32;
+const MARKOV_QUEUE_CAPACITY: usize = 8;
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Copy, Serialize, ToSchema)]
@@ -39,19 +45,24 @@ pub fn start(
     status: watch::Sender<BotStatus>,
 ) -> Result<JoinHandle<()>> {
     let client = TraqClient::new(origin, &config.token, config.id)?;
-    let dictionary = VerseDictionary::sudachidict().context("Could not load SudachiDict")?;
-    let (stamp_jobs, queue) = mpsc::channel(STAMP_QUEUE_CAPACITY);
+    let dictionary = Arc::new(Dictionary::sudachidict().context("Could not load SudachiDict")?);
+    let (stamp_jobs, stamp_queue) = mpsc::channel(STAMP_QUEUE_CAPACITY);
+    let (markov_jobs, markov_queue) = mpsc::channel(MARKOV_QUEUE_CAPACITY);
     let bot = Bot {
         client,
         mention,
         store,
         dictionary,
         stamp_jobs,
+        markov_jobs,
     };
 
     Ok(tokio::spawn(async move {
-        // Both loops belong to the same task so stopping the Bot also stops its worker.
-        tokio::join!(bot.listen(status), stampbomb::run(&bot.client, queue));
+        tokio::join!(
+            bot.listen(status),
+            stampbomb::run(&bot.client, stamp_queue),
+            markov::run(&bot.client, &bot.dictionary, &bot.mention, markov_queue),
+        );
     }))
 }
 
@@ -59,8 +70,9 @@ struct Bot {
     client: TraqClient,
     mention: String,
     store: SenryuStore,
-    dictionary: VerseDictionary,
+    dictionary: Arc<Dictionary>,
     stamp_jobs: mpsc::Sender<stampbomb::Job>,
+    markov_jobs: mpsc::Sender<markov::Job>,
 }
 
 impl Bot {
@@ -99,6 +111,10 @@ impl Bot {
         let result = match event {
             Event::MessageCreated { body } if !body.message.user.bot => {
                 self.handle_created(&body.message).await
+            }
+            Event::DirectMessageCreated { body } if !body.message.user.bot => {
+                self.dispatch_direct(&body.message).await;
+                Ok(())
             }
             Event::MessageUpdated { body } if !body.message.user.bot => {
                 self.handle_updated(&body.message).await
