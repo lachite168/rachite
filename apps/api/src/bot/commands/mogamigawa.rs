@@ -4,12 +4,16 @@ use uuid::Uuid;
 
 pub(super) const STATUS: Command = Command::new(
     "mogamigawa status",
-    "このチャンネルで最上川が有効か確認します。",
+    "このチャンネルで最上川検出が有効か確認します。",
 );
-pub(super) const ON: Command =
-    Command::new("mogamigawa on", "このチャンネルで最上川を有効にします。");
-pub(super) const OFF: Command =
-    Command::new("mogamigawa off", "このチャンネルで最上川を無効にします。");
+pub(super) const ON: Command = Command::new(
+    "mogamigawa on",
+    "このチャンネルで最上川検出を有効にします。",
+);
+pub(super) const OFF: Command = Command::new(
+    "mogamigawa off",
+    "このチャンネルで最上川検出を無効にします。",
+);
 
 pub(super) async fn execute(bot: &Bot, channel_id: Uuid, action: Option<&str>) -> Result<String> {
     let enabled = match action {
@@ -24,5 +28,5 @@ pub(super) async fn execute(bot: &Bot, channel_id: Uuid, action: Option<&str>) -
         _ => return Ok(usage(&bot.mention, "mogamigawa <status|on|off>")),
     };
     let status = if enabled { "オン" } else { "オフ" };
-    Ok(format!("このチャンネルの最上川は{status}です。"))
+    Ok(format!("このチャンネルの最上川検出は{status}です。"))
 }

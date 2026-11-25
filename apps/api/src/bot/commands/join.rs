@@ -7,5 +7,5 @@ pub(super) const HELP: Command = Command::new("join", "このチャンネルに 
 
 pub(super) async fn execute(client: &TraqClient, channel_id: Uuid) -> Result<String> {
     client.set_channel_membership(channel_id, true).await?;
-    Ok("このチャンネルに参加しました！".into())
+    Ok("このチャンネルは参加しています".into())
 }

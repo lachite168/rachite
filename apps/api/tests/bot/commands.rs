@@ -219,8 +219,8 @@ async fn mention_ping_and_help_reply_in_the_command_channel() {
 async fn join_and_leave_use_the_configured_bot_and_command_channel() {
     let mut test = TestBot::new().await;
     for (command, reply) in [
-        ("join", "このチャンネルに参加しました！"),
-        ("leave", "このチャンネルから退出しました！"),
+        ("join", "このチャンネルは参加しています"),
+        ("leave", "このチャンネルは退出しています"),
     ] {
         test.send(command).await;
         let (path, body) = test.requests.try_recv().unwrap();
@@ -267,11 +267,11 @@ async fn stampgacha_supports_ecmascript_regexp_literals() {
         ("stampgacha /(?-i:^big_STAR$)/", ":big_STAR.ex-large:"),
         (
             "stampgacha /(?-i:^BIG_)/",
-            "正規表現に一致するスタンプが見つかりませんでした",
+            "正規表現に一致するスタンプが見つかりませんでした。",
         ),
         (
             "stampgacha /^absent$/",
-            "正規表現に一致するスタンプが見つかりませんでした",
+            "正規表現に一致するスタンプが見つかりませんでした。",
         ),
     ] {
         test.expect_reply(command, reply).await;
@@ -292,7 +292,7 @@ async fn stampgacha_reports_regexp_timeout_and_handles_the_next_command() {
         Duration::from_secs(5),
         test.expect_reply(
             "stampgacha /^(a+)+$/",
-            "正規表現の照合が時間切れになりました",
+            "正規表現の照合が時間切れになりました。",
         ),
     )
     .await
@@ -302,16 +302,17 @@ async fn stampgacha_reports_regexp_timeout_and_handles_the_next_command() {
 }
 
 #[tokio::test]
-async fn stampbomb_enqueues_the_quoted_message_and_reports_a_full_queue() {
+async fn stampbomb_enqueues_the_maximum_for_a_quoted_message_and_reports_a_full_queue() {
     let mut test = TestBot::new().await;
     let target = Uuid::now_v7();
     let link = test.bot.client.message_link(target);
-    let mut message = test.message("stampbomb :w: 1234 [引用メッセージ]");
-    message.text = format!("{MENTION} stampbomb :w: 1234\n{link}");
+    let count = 100_000;
+    let mut message = test.message(&format!("stampbomb :w: {count} [引用メッセージ]"));
+    message.text = format!("{MENTION} stampbomb :w: {count}\n{link}");
     test.bot.handle_created(&message).await.unwrap();
     assert_eq!(
         test.reply(),
-        format!("@alice の代わりに :W: を 1234 回連打します\n{link}")
+        format!("@alice の代わりに :W: を {count} 回連打します。\n{link}")
     );
 
     test.expect_reply(
@@ -323,7 +324,7 @@ async fn stampbomb_enqueues_the_quoted_message_and_reports_a_full_queue() {
     assert_eq!(job.message_id, target);
     assert_eq!(job.stamp_id, STAMP_ID);
     assert_eq!(job.requester_channel, test.channel);
-    assert_eq!(job.count, 1234);
+    assert_eq!(job.count, count);
     assert!(test.jobs.try_recv().is_err());
 }
 
@@ -332,19 +333,19 @@ async fn stampbomb_rejects_invalid_arguments_without_enqueuing() {
     let mut test = TestBot::new().await;
     let link = test.bot.client.message_link(Uuid::now_v7());
     let usage = "使い方: `@BOT_lachite stampbomb <stamp> <number> <message-link>`";
-    let range = "回数 <number> は1〜10000の間で指定してください";
+    let range = "回数 <number> は1〜100000の間で指定してください。";
     for (command, reply) in [
         ("stampbomb w 1".into(), usage),
         (format!("stampbomb w many {link}"), usage),
         (format!("stampbomb w 0 {link}"), range),
-        (format!("stampbomb w 10001 {link}"), range),
+        (format!("stampbomb w 100001 {link}"), range),
         (
             "stampbomb w 1 invalid-link".into(),
-            "無効なメッセージリンクです",
+            "無効なメッセージリンクです。",
         ),
         (
             format!("stampbomb absent 1 {link}"),
-            "スタンプ absent が見つかりませんでした",
+            "スタンプ absent が見つかりませんでした。",
         ),
     ] {
         test.expect_reply(&command, reply).await;
@@ -471,8 +472,8 @@ async fn senryu_events_notify_once_and_keep_published_entries_in_sync() {
 async fn mogamigawa_responds_once_and_uses_its_own_channel_setting() {
     let db = test_database().await;
     let mut test = TestBot::with_store(VerseStore::new(db.clone())).await;
-    let on = "このチャンネルの最上川はオンです。";
-    let off = "このチャンネルの最上川はオフです。";
+    let on = "このチャンネルの最上川検出はオンです。";
+    let off = "このチャンネルの最上川検出はオフです。";
     test.expect_reply("mogamigawa status", on).await;
 
     let verse = "コーヒーは 朝に飲みます";

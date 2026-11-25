@@ -8,7 +8,7 @@ use tokio::sync::mpsc::error::TrySendError;
 
 pub(super) const HELP: Command = Command::new(
     "markov <username> [n] [--here]",
-    "指定した人の公開チャンネルでの発言から文章を生成します。階数 n は1〜4（既定は2）、--here で実行場所に絞ります。",
+    "指定した人の発言から文章を生成します。任意で階数 n を 1〜4 の整数で指定できます。（既定は 2 ）、--here を末尾につけるとそのチャンネルの発言のみから生成します。",
 );
 
 pub(super) async fn submit(

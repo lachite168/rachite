@@ -7,5 +7,5 @@ pub(super) const HELP: Command = Command::new("leave", "このチャンネルか
 
 pub(super) async fn execute(client: &TraqClient, channel_id: Uuid) -> Result<String> {
     client.set_channel_membership(channel_id, false).await?;
-    Ok("このチャンネルから退出しました！".into())
+    Ok("このチャンネルは退出しています".into())
 }

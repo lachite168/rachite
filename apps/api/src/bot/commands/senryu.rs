@@ -8,8 +8,10 @@ pub(super) const STATUS: Command = Command::new(
 );
 pub(super) const ON: Command =
     Command::new("senryu on", "このチャンネルで川柳検出を有効にします。");
-pub(super) const OFF: Command =
-    Command::new("senryu off", "このチャンネルで新規の川柳検出を止めます。");
+pub(super) const OFF: Command = Command::new(
+    "senryu off",
+    "このチャンネルで新規の川柳検出を無効にします。",
+);
 
 pub(super) async fn execute(bot: &Bot, channel_id: Uuid, action: Option<&str>) -> Result<String> {
     let enabled = match action {

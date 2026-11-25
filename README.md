@@ -1,10 +1,10 @@
 # rachite
 
-traQ Bot と、Bot が見つけた川柳を閲覧する部内向け Web です。Web は React + MUI、HTTP API と Bot は Rust（Axum・Tokio）、DB は MariaDB を使います。ユーザー向け仕様は [docs/specs.md](docs/specs.md)、実装時の参照先は [docs/handout.md](docs/handout.md) にあります。
+traQ で川柳・最上川を検出する Bot と、検出結果やコマンドの使い方を閲覧する部内向け Web です。Web は React と MUI、API と Bot は Rust、保存には MariaDB を使います。
 
 ## ローカルで起動
 
-WSL などの開発環境に Node.js（`.node-version`）、Rust stable、Docker Compose を用意します。Rust を初めてビルドする際には Lindera が SudachiDict を取得し、API のバイナリに組み込みます。
+WSL などの開発環境に mise、Node.js（`.node-version`）、Rust stable、Docker Compose を用意します。Rust の初回ビルドでは Lindera が SudachiDict を取得し、API のバイナリに組み込みます。初回のセットアップと起動は以下の手順です。
 
 ```bash
 mise trust
@@ -13,43 +13,25 @@ cp .env.example .env
 mise run dev
 ```
 
-- `mise run dev` は Compose の開発用 MariaDB を起動し、準備完了を待ってから API と Web を起動します。既に稼働している MariaDB を使う場合は `.env` の `DATABASE_URL` を設定し、`mise run dev --no-compose-db` を実行します。
-- 川柳一覧は [http://localhost:5173/senryu](http://localhost:5173/senryu)、コマンド案内は [http://localhost:5173/commands](http://localhost:5173/commands) です。Vite が `/api` と `/swagger-ui` を Axum に転送します。
-- DB は `.env` の `DATABASE_URL` に接続し、API 起動時にマイグレーションを適用します。既定ではローカルの Compose DB を使います。
-- Bot の動作確認には、テスト用 Bot の `TRAQ_BOT_ID` と `TRAQ_BOT_TOKEN`、必要に応じて `TRAQ_BOT_NAME` を設定します。ID とトークンの両方を空にすると、Web と API だけを開発できます。
-- 川柳検出は、誰でもコマンドを送ったチャンネルで `@BOT_lachite senryu on` / `off` により切り替えられます。`senryu status` で現在の状態を確認できます。
+`mise run dev` は開発用 MariaDB を Compose で起動し、準備完了を待ってから API と Web を起動します。API は起動時に DB のマイグレーションを適用します。稼働中の MariaDB を使う場合は、`.env` の `DATABASE_URL` を設定して `mise run dev --no-compose-db` を実行します。
 
-Compose で全体を起動する場合は `mise run up` を実行します。川柳一覧は [http://localhost:8080/senryu](http://localhost:8080/senryu) で確認できます。Compose 内の Axum には nginx が接続します。DB のパスワードに URL の予約文字を使う場合は、URL エンコードした `DATABASE_URL` と `COMPOSE_DATABASE_URL` を設定してください。
+| 用途         | ローカル URL                                                    |
+| ------------ | --------------------------------------------------------------- |
+| 川柳一覧     | [localhost:5173/senryu](http://localhost:5173/senryu)           |
+| 最上川一覧   | [localhost:5173/mogamigawa](http://localhost:5173/mogamigawa)   |
+| コマンド一覧 | [localhost:5173/commands](http://localhost:5173/commands)       |
+| Swagger UI   | [localhost:5173/swagger-ui/](http://localhost:5173/swagger-ui/) |
 
-## Bot のプロフィールを確認・更新する
+Bot を使うときは、テスト用 Bot の `TRAQ_BOT_ID`、`TRAQ_BOT_TOKEN` と、必要に応じて `TRAQ_BOT_NAME` を `.env` に設定します。ID とトークンを両方空にすると Bot は `disabled` になり、Web と API を利用できます。 [Bot 接続の確認](docs/handout.md#bot-接続の確認)
 
-リポジトリのルートで実行します。既存の `.env` または環境変数に設定した `TRAQ_BOT_TOKEN` の Bot が対象です。`TRAQ_ORIGIN` の既定値は `https://q.trap.jp` です。
+Web・API・DB をすべて Compose で起動する場合は `mise run up` を実行し、[localhost:8080](http://localhost:8080) を開きます。DB パスワードに URL の予約文字を使う場合は、接続 URL 中のパスワードをエンコードして `DATABASE_URL` と `COMPOSE_DATABASE_URL` に設定します。
 
-```bash
-# 現在の表示名とひとことを表示
-node --env-file-if-exists=.env scripts/traq-profile.mjs
+## ドキュメント
 
-# ひとことを更新
-node --env-file-if-exists=.env scripts/traq-profile.mjs --bio="川柳を探しています"
-
-# ひとことを空にし、表示名も更新
-node --env-file-if-exists=.env scripts/traq-profile.mjs --bio= --display-name="らちて"
-```
-
-## 確認
-
-| コマンド                                               | 用途                                                              |
-| ------------------------------------------------------ | ----------------------------------------------------------------- |
-| `mise run check`                                       | 型、lint、整形、Web と通常の Rust テストを確認                    |
-| `mise run test`                                        | Web と通常の Rust テストを実行                                    |
-| `npm run test:web`                                     | Web のテストだけを実行                                            |
-| `mise run build`                                       | Web と API を本番向けにビルド                                     |
-| `cargo test --workspace --locked -- --include-ignored` | `TEST_DATABASE_URL` に設定したテスト専用の MariaDB を含めてテスト |
-
-テスト用 DB は空のデータベースを作成し、接続ユーザーにその DB の DDL と読み書きを許可します。GitHub Actions の API ジョブは MariaDB を起動してテストします。
-
-`/api/health` は DB への接続、`/api/bot/status` は Bot の状態（`disabled`、`disconnected`、`connected`）を返します。`/swagger-ui/` から API を確認できます。
-
-## NeoShowcase で部内公開
-
-Web を Static、API と traQ Bot を Runtime として同じドメインに配置し、NeoShowcase の MariaDB を使います。登録画面に入力する値と Bot の切り替えは [NeoShowcase へのデプロイ](docs/NEOSHOWCASE.md) を参照してください。
+| 知りたいこと                                     | 参照先                                                    |
+| ------------------------------------------------ | --------------------------------------------------------- |
+| コマンドの挙動、川柳・最上川の判定、Web の表示   | [機能仕様](docs/specs.md)                                 |
+| コードの入口、テスト、Bot 接続の切り分け         | [開発・保守ガイド](docs/handout.md)                       |
+| NeoShowcase へのデプロイ、Bot 設定・プロフィール | [デプロイ・運用手順](docs/NEOSHOWCASE.md)                 |
+| CI、Dependabot、PR                               | [GitHub の設定](docs/GITHUB.md)                           |
+| 元になったサンプルの設計                         | [ひな形の要件（参考資料）](docs/TEMPLATE_REQUIREMENTS.md) |

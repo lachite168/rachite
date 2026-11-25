@@ -37,18 +37,22 @@ async fn command_catalog_bot_status_and_invalid_cursor() {
     response.assert_status_ok();
     let catalog: Value = response.json();
     assert_eq!(catalog["mention"], "@BOT_lachite");
-    for usage in [
-        "stampbomb <stamp> <number> <message-link>",
-        "markov <username> [n] [--here]",
-    ] {
-        assert!(
-            catalog["commands"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|command| command["usage"] == usage)
-        );
-    }
+    let commands = catalog["commands"].as_array().unwrap();
+    let stampbomb = commands
+        .iter()
+        .find(|command| command["usage"] == "stampbomb <stamp> <number> <message-link>")
+        .expect("stampbomb should be listed in the command catalog");
+    assert!(
+        stampbomb["description"]
+            .as_str()
+            .unwrap()
+            .contains("100,000")
+    );
+    assert!(
+        commands
+            .iter()
+            .any(|command| command["usage"] == "markov <username> [n] [--here]")
+    );
 
     server
         .get("/bot/status")
