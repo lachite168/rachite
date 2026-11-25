@@ -1,5 +1,5 @@
 use super::{Bot, markov};
-use crate::{senryu::SenryuStore, text::Dictionary, traq::TraqClient};
+use crate::{text::Dictionary, traq::TraqClient, verse::VerseStore};
 use axum::{
     Json, Router,
     body::to_bytes,
@@ -117,7 +117,7 @@ impl Fixture {
         let bot = Bot {
             client: TraqClient::new(url, "test-token", bot_id).unwrap(),
             mention: MENTION.into(),
-            store: SenryuStore::new(db),
+            store: VerseStore::new(db),
             dictionary,
             stamp_jobs: mpsc::channel(1).0,
             markov_jobs,

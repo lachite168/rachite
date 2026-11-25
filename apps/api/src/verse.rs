@@ -4,4 +4,4 @@ mod store;
 
 pub(crate) use detect::detect;
 pub(crate) use store::MogamigawaCursor;
-pub use store::{Senryu, SenryuCursor, SenryuStore};
+pub use store::{Senryu, SenryuCursor, VerseStore};

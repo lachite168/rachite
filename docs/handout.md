@@ -22,17 +22,17 @@ Bot Console でテスト用 Bot が WebSocket Mode になっていることを�
 
 ## 実装の入口
 
-| 用途                     | 編集箇所                                                                                                                                                                                                                                         |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 起動・環境変数           | [main.rs](../apps/api/src/main.rs)、[config.rs](../apps/api/src/config.rs)。起動時に MariaDB のマイグレーションを適用します。                                                                                                                    |
-| Bot の受信・イベント処理 | [bot.rs](../apps/api/src/bot.rs)。WebSocket で受信し、通常イベントを受信順に処理します。イベント型と返信用 HTTP クライアントは `apps/api/src/traq/` にあります。                                                                                 |
-| コマンド追加・ヘルプ     | [commands.rs](../apps/api/src/bot/commands.rs) で振り分けとヘルプ定義を登録します。コマンド本体は `apps/api/src/bot/commands/` に1コマンドずつ置き、ガチャの抽選処理は共用します。Bot の `help` と Web の `/api/commands` は同じ定義を使います。 |
-| スタンプ送信             | [bot/stampbomb.rs](../apps/api/src/bot/stampbomb.rs)。処理は単一ワーカーに渡し、100個ずつに分けて送ります。50 ms の待機はジョブの境目にも適用します。                                                                                            |
-| 川柳の判定・保存         | [detect.rs](../apps/api/src/senryu/detect.rs) に旧 Bot の判定を移植済みです。[store.rs](../apps/api/src/senryu/store.rs) がチャンネル設定、保存・更新・削除、一覧ページ分割を担当します。                                                        |
-| HTTP API                 | [http.rs](../apps/api/src/http.rs)。川柳一覧は `/api/senryu`、コマンド案内は `/api/commands`、DB と Bot の確認はそれぞれ `/api/health` と `/api/bot/status` です。                                                                               |
-| Web                      | [App.tsx](../apps/web/src/App.tsx) が React Router のルートを定義します。`/senryu` は川柳一覧、`/commands` は使い方、`/` は共通ナビゲーションだけで将来のトップページ用です。                                                                    |
+| 用途                     | 編集箇所                                                                                                                                                                                                                                                               |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 起動・環境変数           | [main.rs](../apps/api/src/main.rs)、[config.rs](../apps/api/src/config.rs)。起動時に MariaDB のマイグレーションを適用します。                                                                                                                                          |
+| Bot の受信・イベント処理 | [bot.rs](../apps/api/src/bot.rs)。WebSocket で受信し、通常イベントを受信順に処理します。イベント型と API クライアントは `apps/api/src/traq/` にあります。投稿・履歴取得・投稿リンクの処理は [client/messages.rs](../apps/api/src/traq/client/messages.rs) にあります。 |
+| コマンド追加・ヘルプ     | [commands.rs](../apps/api/src/bot/commands.rs) で振り分けとヘルプ定義を登録します。コマンド本体は `apps/api/src/bot/commands/` に1コマンドずつ置き、ガチャの抽選処理は共用します。Bot の `help` と Web の `/api/commands` は同じ定義を使います。                       |
+| スタンプ送信             | [bot/stampbomb.rs](../apps/api/src/bot/stampbomb.rs)。処理は単一ワーカーに渡し、100個ずつに分けて送ります。50 ms の待機はジョブの境目にも適用します。                                                                                                                  |
+| 川柳・最上川の判定と保存 | [verse/detect.rs](../apps/api/src/verse/detect.rs) が川柳と最上川を判定します。[VerseStore](../apps/api/src/verse/store.rs) が両方の設定、保存・更新・削除、一覧ページ分割を担当します。                                                                               |
+| HTTP API                 | [http.rs](../apps/api/src/http.rs)。川柳一覧は `/api/senryu`、コマンド案内は `/api/commands`、DB と Bot の確認はそれぞれ `/api/health` と `/api/bot/status` です。                                                                                                     |
+| Web                      | [App.tsx](../apps/web/src/App.tsx) が React Router のルートを定義します。`/senryu` は川柳一覧、`/commands` は使い方、`/` は共通ナビゲーションだけで将来のトップページ用です。                                                                                          |
 
-Rust は `bot.rs` + `bot/` のようにモジュール名と同じファイルを入口にします。機能の流れを追える構成を優先し、DB や traQ クライアントは必要な箇所から直接呼びます。Web の `pages/` は取得処理と画面構成、`components/` は表示部品を担当します。MUI の配色とアクセント `#0485F7` は [theme.ts](../apps/web/src/theme.ts) にあります。[HeroUI Default テーマ](https://heroui.com/en/themes) · [UXPin の UI デザインの基本原則](https://www.uxpin.com/studio/jp/blog-jp/ui-design-principles-ja/)
+Rust は `bot.rs` + `bot/` のようにモジュール名と同じファイルを入口にします。機能の流れを追える構成を優先し、DB や traQ クライアントは必要な箇所から直接呼びます。模擬 traQ を使う Bot テストは `apps/api/tests/bot/` に置き、`#[path]` で Bot の内部テストとして読み込みます。公開 HTTP API の統合テストは `apps/api/tests/api.rs` に置きます。Web の `pages/` は取得処理と画面構成、`components/` は表示部品を担当します。MUI の配色とアクセント `#0485F7` は [theme.ts](../apps/web/src/theme.ts) にあります。[HeroUI Default テーマ](https://heroui.com/en/themes) · [UXPin の UI デザインの基本原則](https://www.uxpin.com/studio/jp/blog-jp/ui-design-principles-ja/)
 
 ## stampgacha の実装引き継ぎ
 
@@ -60,18 +60,18 @@ Rust は `bot.rs` + `bot/` のようにモジュール名と同じファイル�
 
 2026年11月23日に、投稿全体が 5・7 拍のときの最上川の返信とスタンプ送信を実装しました。[最上川の仕様](specs.md#最上川)
 
-1. 投稿の本文抽出、文節分け、拍数計算を川柳と共用します。川柳は投稿の途中の句を拾い、最上川は本文全体が文節の境界で 5・7 拍に分かれるかを判定します。 [判定処理](../apps/api/src/senryu/detect.rs)
+1. 投稿の本文抽出、文節分け、拍数計算を川柳と共用します。川柳は投稿の途中の句を拾い、最上川は本文全体が文節の境界で 5・7 拍に分かれるかを判定します。 [判定処理](../apps/api/src/verse/detect.rs)
 2. 人の新規投稿を処理する `handle_created` で、コマンド処理後に最上川を判定します。`mogamigawa status` / `on` / `off` は投稿したチャンネルの設定を表示・変更します。既存の設定行と設定未登録のチャンネルでも最上川の初期値はオンです。 [イベント処理](../apps/api/src/bot.rs) · [コマンド定義](../apps/api/src/bot/commands/mogamigawa.rs) · [マイグレーション](../apps/api/migrations/0002_mogamigawa.sql)
 3. 最上川は通知を送る前に句と検出日時を保存します。スタンプ3種が揃ったら、元投稿 ID の返信処理を一度だけ開始し、返信の後にスタンプを順番に押します。Web の `/mogamigawa` は `/api/mogamigawa` から新着20件ずつ取得します。本文と日時を持たない既存の処理記録も、元投稿リンクとして表示できます。 [最上川の送信処理](../apps/api/src/bot/mogamigawa.rs) · [マイグレーション](../apps/api/migrations/0003_mogamigawa_listing.sql)
-4. 判定テストでは、長音を含む 5・7 と 5・7・5、5拍目が文節境界にならない12拍の本文、URL付き本文を確認しました。模擬 traQ と専用 MariaDB では、初期オン、設定の独立、重複イベント、スタンプの送信先・順序・個数、途中失敗を確認しました。既存の川柳設定を保持したまま移行できることも確認済みです。実際の traQ では、同じスタンプが先に押されていても追加されることと、画面での表示順を確認します。 [判定テスト](../apps/api/src/senryu/detect.rs) · [模擬 API のテスト](../apps/api/tests/bot/commands.rs)
+4. 判定テストでは、長音を含む 5・7 と 5・7・5、5拍目が文節境界にならない12拍の本文、URL付き本文を確認しました。模擬 traQ と専用 MariaDB では、初期オン、設定の独立、重複イベント、スタンプの送信先・順序・個数、途中失敗を確認しました。既存の川柳設定を保持したまま移行できることも確認済みです。実際の traQ では、同じスタンプが先に押されていても追加されることと、画面での表示順を確認します。 [判定テスト](../apps/api/src/verse/detect.rs) · [模擬 API のテスト](../apps/api/tests/bot/commands.rs)
 
 ## SudachiDict への移行
 
 1. `markdown.rs` は `pulldown-cmark` のイベントから本文を抽出し、traQ 固有の埋め込み、スタンプ、メンション、ネタバレを補足処理します。`plainText` は traQ が埋め込みの一部を置換した結果なので、判定には元の `text` を使います。 [実装](../apps/api/src/text/markdown.rs) · [traQ の本文変換](https://github.com/traPtitech/traQ/blob/master/utils/message/parser.go)
-2. `dictionary.rs` は Lindera の同梱 SudachiDict から読みと品詞を項目名で取得します。英字は小文字で辞書を引き、掲載には元の綴りを使います。`detect.rs` は読み不明の語で川柳の探索を区切り、最上川の判定を見送ります。 [辞書との接続](../apps/api/src/senryu/dictionary.rs) · [文節と拍数の判定](../apps/api/src/senryu/detect.rs) · [Lindera の辞書形式](https://lindera.github.io/lindera/lindera-sudachidict/dictionary_format.html)
+2. `dictionary.rs` は Lindera の同梱 SudachiDict から読みと品詞を項目名で取得します。英字は小文字で辞書を引き、掲載には元の綴りを使います。`detect.rs` は読み不明の語で川柳の探索を区切り、最上川の判定を見送ります。 [辞書との接続](../apps/api/src/verse/dictionary.rs) · [文節と拍数の判定](../apps/api/src/verse/detect.rs) · [Lindera の辞書形式](https://lindera.github.io/lindera/lindera-sudachidict/dictionary_format.html)
 3. 既存の掲載結果は移行時に再計算しません。編集時に新しい解析を使って一覧だけ更新し、削除時は従来どおり取り下げます。解析エラーと解析が成功した結果の未検出を区別します。 [イベント処理](../apps/api/src/bot.rs)
 4. テストでは本文抽出と句の判定をそれぞれ確認します。同じ句を通常文・リスト・引用・リンクで書いた場合、装飾しかない投稿、読み不明の語の前後に句がある場合を含めます。模擬 traQ では両方の本文フィールドが異なるイベントを使います。 [検出仕様](specs.md#川柳と最上川の本文抽出拍数)
-5. 同梱辞書は「月は東に日は西に」を一語として解析します。「菜の花や月は東に日は西に」は中七の末尾に文節境界が取れず、句ごとに空白を入れた「菜の花や 月は東に 日は西に」は検出できます。 [判定テスト](../apps/api/src/senryu/detect.rs)
+5. 同梱辞書は「月は東に日は西に」を一語として解析します。「菜の花や月は東に日は西に」は中七の末尾に文節境界が取れず、句ごとに空白を入れた「菜の花や 月は東に 日は西に」は検出できます。 [判定テスト](../apps/api/src/verse/detect.rs)
 6. 一時 MariaDB 11.8 と模擬 traQ で `cargo test --workspace --locked -- --include-ignored` の30件を確認しました。実際の traQ では、番号付きリスト、引用文、添付を含む新規投稿と編集イベントをテスト Bot で確認します。 [イベントのテスト](../apps/api/tests/bot/commands.rs)
 
 ## 検証済みの範囲

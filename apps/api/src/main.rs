@@ -3,7 +3,7 @@ use rachite_api::{
     AppState, app,
     bot::{self, BotStatus},
     config::Config,
-    senryu::SenryuStore,
+    verse::VerseStore,
 };
 use sqlx::mysql::MySqlPoolOptions;
 use tokio::{net::TcpListener, sync::watch};
@@ -25,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
     sqlx::migrate!().run(&db).await?;
 
     let listener = TcpListener::bind((config.host.as_str(), config.port)).await?;
-    let store = SenryuStore::new(db);
+    let store = VerseStore::new(db);
     let initial_status = if config.bot.is_some() {
         BotStatus::Disconnected
     } else {

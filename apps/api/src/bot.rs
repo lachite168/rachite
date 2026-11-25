@@ -8,9 +8,9 @@ mod stampbomb;
 
 use crate::{
     config::BotConfig,
-    senryu::{self, SenryuStore},
     text::Dictionary,
     traq::{Event, Message, TraqClient},
+    verse::{self, VerseStore},
 };
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
@@ -41,7 +41,7 @@ pub fn start(
     config: BotConfig,
     origin: Url,
     mention: String,
-    store: SenryuStore,
+    store: VerseStore,
     status: watch::Sender<BotStatus>,
 ) -> Result<JoinHandle<()>> {
     let client = TraqClient::new(origin, &config.token, config.id)?;
@@ -69,7 +69,7 @@ pub fn start(
 struct Bot {
     client: TraqClient,
     mention: String,
-    store: SenryuStore,
+    store: VerseStore,
     dictionary: Arc<Dictionary>,
     stamp_jobs: mpsc::Sender<stampbomb::Job>,
     markov_jobs: mpsc::Sender<markov::Job>,
@@ -150,7 +150,7 @@ impl Bot {
             return Ok(());
         }
 
-        let verses = senryu::detect(&message.text, &self.dictionary)
+        let verses = verse::detect(&message.text, &self.dictionary)
             .with_context(|| format!("Could not analyze message {}", message.id))?;
         if let Some(verse) = verses.mogamigawa {
             if self.store.is_mogamigawa_enabled(message.channel_id).await? {
@@ -182,7 +182,7 @@ impl Bot {
     async fn handle_updated(&self, message: &Message) -> Result<()> {
         let verses = match commands::arguments(&self.mention, &message.plain_text) {
             Some(_) => Default::default(),
-            None => senryu::detect(&message.text, &self.dictionary)
+            None => verse::detect(&message.text, &self.dictionary)
                 .with_context(|| format!("Could not analyze edited message {}", message.id))?,
         };
         let allow_new =

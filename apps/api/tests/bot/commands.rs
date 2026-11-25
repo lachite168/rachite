@@ -1,9 +1,9 @@
 use super::{Bot, arguments, command_catalog};
 use crate::{
     bot::stampbomb::Job,
-    senryu::SenryuStore,
     text::Dictionary,
     traq::{Message, TraqClient},
+    verse::VerseStore,
 };
 use axum::{
     Json, Router,
@@ -49,14 +49,14 @@ impl TestBot {
         let db = MySqlPoolOptions::new()
             .connect_lazy("mysql://rachite:unused@127.0.0.1/rachite_test")
             .unwrap();
-        Self::with_store(SenryuStore::new(db)).await
+        Self::with_store(VerseStore::new(db)).await
     }
 
-    async fn with_store(store: SenryuStore) -> Self {
+    async fn with_store(store: VerseStore) -> Self {
         Self::with_failing_stamp(store, None).await
     }
 
-    async fn with_failing_stamp(store: SenryuStore, failing_stamp: Option<Uuid>) -> Self {
+    async fn with_failing_stamp(store: VerseStore, failing_stamp: Option<Uuid>) -> Self {
         let (sender, requests) = mpsc::unbounded_channel();
         let api = Router::new()
             .route(
@@ -367,7 +367,7 @@ async fn detection_commands_report_usage_for_missing_or_invalid_actions() {
 #[ignore = "requires TEST_DATABASE_URL for a dedicated MariaDB database"]
 async fn senryu_commands_persist_settings_per_channel() {
     let db = test_database().await;
-    let mut test = TestBot::with_store(SenryuStore::new(db.clone())).await;
+    let mut test = TestBot::with_store(VerseStore::new(db.clone())).await;
     let original_channel = test.channel;
     let on = "このチャンネルの川柳検出はオンです。";
     let off = "このチャンネルの川柳検出はオフです。";
@@ -391,7 +391,7 @@ async fn senryu_commands_persist_settings_per_channel() {
 #[ignore = "requires TEST_DATABASE_URL for a dedicated MariaDB database"]
 async fn senryu_events_notify_once_and_keep_published_entries_in_sync() {
     let db = test_database().await;
-    let mut test = TestBot::with_store(SenryuStore::new(db.clone())).await;
+    let mut test = TestBot::with_store(VerseStore::new(db.clone())).await;
     let channel = test.channel;
     let message_id = Uuid::now_v7();
     let original =
@@ -470,7 +470,7 @@ async fn senryu_events_notify_once_and_keep_published_entries_in_sync() {
 #[ignore = "requires TEST_DATABASE_URL for a dedicated MariaDB database"]
 async fn mogamigawa_responds_once_and_uses_its_own_channel_setting() {
     let db = test_database().await;
-    let mut test = TestBot::with_store(SenryuStore::new(db.clone())).await;
+    let mut test = TestBot::with_store(VerseStore::new(db.clone())).await;
     let on = "このチャンネルの最上川はオンです。";
     let off = "このチャンネルの最上川はオフです。";
     test.expect_reply("mogamigawa status", on).await;
@@ -571,7 +571,7 @@ async fn mogamigawa_responds_once_and_uses_its_own_channel_setting() {
 async fn mogamigawa_stops_at_a_failed_stamp_and_does_not_retry() {
     let db = test_database().await;
     let mut test =
-        TestBot::with_failing_stamp(SenryuStore::new(db.clone()), Some(MOGAMIGAWA_STAMPS[1])).await;
+        TestBot::with_failing_stamp(VerseStore::new(db.clone()), Some(MOGAMIGAWA_STAMPS[1])).await;
     let verse = "古池や 蛙飛びこむ";
     let message = test.channel_message(verse, verse);
 
