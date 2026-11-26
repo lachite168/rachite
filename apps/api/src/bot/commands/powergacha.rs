@@ -12,7 +12,7 @@ pub(super) fn execute(text: Option<&str>) -> String {
         Ok(n @ 1..=64) => BigUint::from(n),
         Ok(_) => return "n は 1 ~ 64 で指定してください".into(),
     };
-    let power = rand::random_range(1..1024);
+    let power = rand::random_range(1..=1024);
 
     format!("{}", base.pow(power))
 }
