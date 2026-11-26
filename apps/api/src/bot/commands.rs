@@ -8,6 +8,7 @@ mod mention;
 mod mogamigawa;
 mod n3gacha;
 mod ping;
+mod powergacha;
 mod senryu;
 mod stampbomb;
 mod stampgacha;
@@ -51,6 +52,7 @@ const COMMANDS: &[Command] = &[
     mogamigawa::ON,
     mogamigawa::OFF,
     markov::HELP,
+    powergacha::HELP,
     help::HELP,
 ];
 
@@ -96,6 +98,7 @@ impl Bot {
                 .await;
                 return Ok(());
             }
+            Some("powergacha") => powergacha::execute(args.next()),
             Some("help") => help::execute(&self.mention),
             _ => return Ok(()),
         };

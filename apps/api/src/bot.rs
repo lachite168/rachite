@@ -25,8 +25,8 @@ use utoipa::ToSchema;
 
 pub use commands::{Command, command_catalog};
 
-const STAMP_QUEUE_CAPACITY: usize = 32;
-const MARKOV_QUEUE_CAPACITY: usize = 8;
+const STAMP_QUEUE_CAPACITY: usize = 16;
+const MARKOV_QUEUE_CAPACITY: usize = 16;
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Copy, Serialize, ToSchema)]
