@@ -46,27 +46,37 @@ struct TestBot {
 
 impl TestBot {
     async fn new() -> Self {
+        Self::with_extra_stamp(None).await
+    }
+
+    async fn with_extra_stamp(extra_stamp: Option<&str>) -> Self {
         let db = MySqlPoolOptions::new()
             .connect_lazy("mysql://rachite:unused@127.0.0.1/rachite_test")
             .unwrap();
-        Self::with_store(VerseStore::new(db)).await
+        Self::with_mock_api(VerseStore::new(db), None, extra_stamp).await
     }
 
     async fn with_store(store: VerseStore) -> Self {
-        Self::with_failing_stamp(store, None).await
+        Self::with_mock_api(store, None, None).await
     }
 
-    async fn with_failing_stamp(store: VerseStore, failing_stamp: Option<Uuid>) -> Self {
+    async fn with_mock_api(
+        store: VerseStore,
+        failing_stamp: Option<Uuid>,
+        extra_stamp: Option<&str>,
+    ) -> Self {
         let (sender, requests) = mpsc::unbounded_channel();
+        let extra_stamp = extra_stamp.map(|name| json!({"name": name, "id": Uuid::from_u128(15)}));
         let api = Router::new()
             .route(
                 "/api/v3/stamps",
-                get(|| async {
-                    Json(json!([
+                get(move || async {
+                    let mut stamps = json!([
                         {"name": "Lachite_smile", "id": Uuid::from_u128(3)},
                         {"name": "old_lachite", "id": Uuid::from_u128(4)},
                         {"name": "N3_fox", "id": Uuid::from_u128(5)},
                         {"name": "old_n3", "id": Uuid::from_u128(6)},
+                        {"name": "old_suima", "id": Uuid::from_u128(14)},
                         {"name": "big_STAR", "id": Uuid::from_u128(7)},
                         {"name": "W", "id": STAMP_ID},
                         {"name": "foo/bar", "id": Uuid::from_u128(11)},
@@ -75,7 +85,9 @@ impl TestBot {
                         {"name": "mogamigawa03_gawa", "id": MOGAMIGAWA_STAMPS[2]},
                         {"name": "mogamigawa01_mo", "id": MOGAMIGAWA_STAMPS[0]},
                         {"name": "mogamigawa02_gami", "id": MOGAMIGAWA_STAMPS[1]}
-                    ]))
+                    ]);
+                    stamps.as_array_mut().unwrap().extend(extra_stamp);
+                    Json(stamps)
                 }),
             )
             .route(
@@ -249,6 +261,17 @@ async fn gacha_commands_match_and_report_missing_stamps() {
     ] {
         test.expect_reply(command, reply).await;
     }
+}
+
+#[tokio::test]
+async fn suimagacha_matches_only_stamps_with_the_suima_prefix() {
+    let mut test = TestBot::with_extra_stamp(Some("Suima_smile")).await;
+    test.expect_reply("suimagacha", ":Suima_smile.ex-large:")
+        .await;
+
+    let mut test = TestBot::new().await;
+    test.expect_reply("suimagacha", "suima のスタンプが見つかりませんでした")
+        .await;
 }
 
 #[tokio::test]
@@ -571,8 +594,12 @@ async fn mogamigawa_responds_once_and_uses_its_own_channel_setting() {
 #[ignore = "requires TEST_DATABASE_URL for a dedicated MariaDB database"]
 async fn mogamigawa_stops_at_a_failed_stamp_and_does_not_retry() {
     let db = test_database().await;
-    let mut test =
-        TestBot::with_failing_stamp(VerseStore::new(db.clone()), Some(MOGAMIGAWA_STAMPS[1])).await;
+    let mut test = TestBot::with_mock_api(
+        VerseStore::new(db.clone()),
+        Some(MOGAMIGAWA_STAMPS[1]),
+        None,
+    )
+    .await;
     let verse = "古池や 蛙飛びこむ";
     let message = test.channel_message(verse, verse);
 

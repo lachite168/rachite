@@ -12,6 +12,7 @@ mod powergacha;
 mod senryu;
 mod stampbomb;
 mod stampgacha;
+mod suimagacha;
 #[cfg(test)]
 #[path = "../../tests/bot/commands.rs"]
 mod tests;
@@ -42,6 +43,7 @@ const COMMANDS: &[Command] = &[
     leave::HELP,
     lachitegacha::HELP,
     n3gacha::HELP,
+    suimagacha::HELP,
     stampgacha::HELP,
     stampgacha::REGEX_HELP,
     stampbomb::HELP,
@@ -82,6 +84,7 @@ impl Bot {
             Some("leave") => leave::execute(&self.client, message.channel_id).await?,
             Some("lachitegacha") => lachitegacha::execute(&self.client).await?,
             Some("n3gacha") => n3gacha::execute(&self.client).await?,
+            Some("suimagacha") => suimagacha::execute(&self.client).await?,
             Some("stampgacha") => stampgacha::execute(self, args.next()).await?,
             Some("stampbomb") => stampbomb::execute(self, message, args).await?,
             Some("senryu") => senryu::execute(self, message.channel_id, args.next()).await?,
