@@ -8,18 +8,20 @@ rachite は traQ の旧 Bot（`test2`）を引き継ぎ、川柳・最上川の�
 
 チャンネルでは Bot 宛てメンションの後にコマンドを指定します。Bot との DM では `markov` を同じ書式で使えます。コマンドの使い方は Bot の `help` と Web の `/commands` に表示します。 [コマンド定義](../apps/api/src/bot/commands.rs)
 
-| 入力                                                     | 挙動                                                                  |
-| -------------------------------------------------------- | --------------------------------------------------------------------- |
-| `@BOT_lachite`                                           | 呼びかけたユーザーにメンションを返す                                  |
-| `help`                                                   | コマンドの使い方を返す                                                |
-| `ping [文字列]`                                          | pong と経過時間を返す。最初の引数があれば返信に含める                 |
-| `join` / `leave`                                         | 実行したチャンネルに参加・退出する                                    |
-| `lachitegacha` / `n3gacha`                               | 名前がそれぞれ `lachite` / `n3` で始まるスタンプからランダムに1つ選ぶ |
-| `stampgacha <search>` / `stampgacha /pattern/[flags]`    | 名前が検索条件に一致したスタンプからランダムに1つ選ぶ                 |
-| `stampbomb <stamp> <number> <message-link>`              | 対象メッセージへのスタンプ送信を受け付ける                            |
-| `senryu status` / `senryu on` / `senryu off`             | 実行したチャンネルの川柳検出の状態を表示・変更する                    |
-| `mogamigawa status` / `mogamigawa on` / `mogamigawa off` | 実行したチャンネルの最上川検出の状態を表示・変更する                  |
-| `markov <username> [n] [--here]`                         | 指定ユーザーの発言から文章を1件生成する                               |
+| 入力                                                     | 挙動                                                                          |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `@BOT_lachite`                                           | 呼びかけたユーザーにメンションを返す                                          |
+| `help`                                                   | コマンドの使い方を返す                                                        |
+| `ping [文字列]`                                          | pong と経過時間を返す。最初の引数があれば返信に含める                         |
+| `join` / `leave`                                         | 実行したチャンネルに参加・退出する                                            |
+| `lachitegacha` / `n3gacha`                               | 名前がそれぞれ `lachite` / `n3` で始まるスタンプからランダムに1つ選ぶ         |
+| `suimagacha`                                             | 名前が `suima` で始まるスタンプからランダムに1つ選ぶ                          |
+| `stampgacha <search>` / `stampgacha /pattern/[flags]`    | 名前が検索条件に一致したスタンプからランダムに1つ選ぶ                         |
+| `stampbomb <stamp> <number> <message-link>`              | 対象メッセージへのスタンプ送信を受け付ける                                    |
+| `senryu status` / `senryu on` / `senryu off`             | 実行したチャンネルの川柳検出の状態を表示・変更する                            |
+| `mogamigawa status` / `mogamigawa on` / `mogamigawa off` | 実行したチャンネルの最上川検出の状態を表示・変更する                          |
+| `markov <username> [n] [--here]`                         | 指定ユーザーの発言から文章を1件生成する                                       |
+| `powergacha [n]`                                         | 1〜1023から指数をランダムに選び、`n` のべき乗を返す。`n` は1〜64で、既定値は2 |
 
 ### スタンプガチャ
 
